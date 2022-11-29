@@ -121,6 +121,16 @@ def temp_seed(seed):
 
 
 def get_env_state_for_initial_condition(initial_condition):
+    """Converts discrete specification of the CALVIN environment into exact coordinates for objects and robot position.
+    Maps environment desciptor to actual environment position.
+
+    Args:
+        initial_condition (_type_): _description_
+
+    Returns:
+        _type_: _description_
+    """
+    # Default position of the robot
     robot_obs = np.array(
         [
             0.02586889,

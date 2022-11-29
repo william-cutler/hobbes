@@ -12,7 +12,7 @@ import numpy as np
 
 logger = logging.getLogger(__name__)
 
-
+# A wannabe ENUM
 task_categories = {
     "rotate_red_block_right": 1,
     "rotate_red_block_left": 1,
@@ -50,6 +50,7 @@ task_categories = {
     "unstack_block": 11,
 }
 
+# Manually defining logical conditions for each task to ensure that all sequences generated are valid
 tasks = {
     "rotate_red_block_right": [{"condition": {"red_block": "table", "grasped": 0}, "effect": {"red_block": "table"}}],
     "rotate_red_block_left": [{"condition": {"red_block": "table", "grasped": 0}, "effect": {"red_block": "table"}}],
@@ -258,6 +259,23 @@ tasks = {
     ],
 }
 
+def check_sequence(state, seq):
+    # Check that the sequence is logically valid (i.e., can't try to pick up block from a closed draw)
+    for task_name in seq:
+        states = valid_task(state, tasks[task_name])
+        if len(states) != 1:
+            return False
+        state = states[0]
+    categories = [task_categories[name] for name in seq]
+    return len(categories) == len(set(categories))
+
+def valid_task(curr_state, task):
+    next_states = []
+    for _task in task:
+        if check_condition(curr_state, _task["condition"]):
+            next_state = update_state(curr_state, _task["effect"])
+            next_states.append(next_state)
+    return next_states
 
 def check_condition(state, condition):
     for k, v in condition.items():
@@ -271,21 +289,11 @@ def check_condition(state, condition):
             raise TypeError
     return True
 
-
 def update_state(state, effect):
     next_state = deepcopy(state)
     for k, v in effect.items():
         next_state[k] = v
     return next_state
-
-
-def valid_task(curr_state, task):
-    next_states = []
-    for _task in task:
-        if check_condition(curr_state, _task["condition"]):
-            next_state = update_state(curr_state, _task["effect"])
-            next_states.append(next_state)
-    return next_states
 
 
 def get_sequences_for_state(state, num_sequences=None):
@@ -319,17 +327,6 @@ def get_sequences_for_state(state, num_sequences=None):
         results = results[:num_sequences]
     return results
 
-
-def check_sequence(state, seq):
-    for task_name in seq:
-        states = valid_task(state, tasks[task_name])
-        if len(states) != 1:
-            return False
-        state = states[0]
-    categories = [task_categories[name] for name in seq]
-    return len(categories) == len(set(categories))
-
-
 def get_sequences_for_state2(args):
     state, num_sequences, i = args
     np.random.seed(i)
@@ -337,6 +334,7 @@ def get_sequences_for_state2(args):
     results = []
 
     while len(results) < num_sequences:
+        # Choose the 5 tasks to execute in order
         seq = np.random.choice(list(tasks.keys()), size=seq_len, replace=False)
         if check_sequence(state, seq):
             results.append(seq)
@@ -349,6 +347,17 @@ def flatten(t):
 
 @functools.lru_cache
 def get_sequences(num_sequences=1000, num_workers=None):
+    """Generates a series of the specified number of scenarios to evaluate on. 
+    Each scenario is composed of an initial state of the environment and an ordered list of 5 tasks (the sequence). 
+    There will be repeated initial states, but with different sequences (as necessary to reach the desired num_sequence).
+
+    Args:
+        num_sequences (int, optional): _description_. Defaults to 1000.
+        num_workers (_type_, optional): _description_. Defaults to None.
+
+    Returns:
+        _type_: _description_
+    """
     possible_conditions = {
         "led": [0, 1],
         "lightbulb": [0, 1],
@@ -359,11 +368,14 @@ def get_sequences(num_sequences=1000, num_workers=None):
         "pink_block": ["table", "slider_right", "slider_left"],
         "grasped": [0],
     }
-
-    f = lambda l: l.count("table") in [1, 2] and l.count("slider_right") < 2 and l.count("slider_left") < 2
+    # 'product' will pick one of each of the values in the above dict, 
+    # 'f' ensures that we only consider conditions where exactly 1 or 2 blocks are on the table, < 2 blocks in slider_right, and < 2 blocks in slider_left
+    f = lambda l: l.count("table") in [1, 2] and l.count("slider_right") < 2 and l.count("slider_left") < 2 
     value_combinations = filter(f, product(*possible_conditions.values()))
+    # an initial state is a dictionary w/same keys as possible_conditions, but only one of the values selected from the list for each object, if valid under 'f'
     initial_states = [dict(zip(possible_conditions.keys(), vals)) for vals in value_combinations]
 
+    # generate near-equal numbers of each possible initial_state such that total num_sequences is met
     num_sequences_per_state = list(map(len, np.array_split(range(num_sequences), len(initial_states))))
     logger.info("Start generating evaluation sequences.")
     # set the numpy seed temporarily to 0

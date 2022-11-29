@@ -94,6 +94,13 @@ def count_success(results):
 
 
 def print_and_save(total_results, plan_dicts, args):
+    """ Saves evaluation results data to .npz file for each epoch in the log folder specified via argument.
+
+    Args:
+        total_results (_type_): _description_
+        plan_dicts (_type_): _description_
+        args (_type_): _description_
+    """
     log_dir = get_log_dir(args.log_dir)
 
     sequences = get_sequences(args.num_sequences)
@@ -174,6 +181,7 @@ def evaluate_policy(model, env, lang_embeddings, args):
     if not args.debug:
         eval_sequences = tqdm(eval_sequences, position=0, leave=True)
 
+    # Evaluate model on all the sequences, one at a time
     for initial_state, eval_sequence in eval_sequences:
         result = evaluate_sequence(
             env, model, task_oracle, initial_state, eval_sequence, lang_embeddings, val_annotations, args, plans
@@ -190,8 +198,9 @@ def evaluate_policy(model, env, lang_embeddings, args):
 def evaluate_sequence(
     env, model, task_checker, initial_state, eval_sequence, lang_embeddings, val_annotations, args, plans
 ):
+    # Computes number of tasks completed successfully in the sequence
     robot_obs, scene_obs = get_env_state_for_initial_condition(initial_state)
-    env.reset(robot_obs=robot_obs, scene_obs=scene_obs)
+    env.reset(robot_obs=robot_obs, scene_obs=scene_obs) # Ensure consistent start
 
     success_counter = 0
     if args.debug:
