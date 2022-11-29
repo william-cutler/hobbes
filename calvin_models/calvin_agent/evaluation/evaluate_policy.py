@@ -176,7 +176,7 @@ def evaluate_policy(model, env, lang_embeddings, args):
     eval_sequences = get_sequences(args.num_sequences)
 
     results = []
-    plans = defaultdict(list)
+    plans = defaultdict(list) # To be modified with the plans the model actually created for completing the task
 
     if not args.debug:
         eval_sequences = tqdm(eval_sequences, position=0, leave=True)
@@ -196,13 +196,13 @@ def evaluate_policy(model, env, lang_embeddings, args):
 
 
 def evaluate_sequence(
-    env, model, task_checker, initial_state, eval_sequence, lang_embeddings, val_annotations, args, plans
+    env, model, task_oracle, initial_state, eval_sequence, lang_embeddings, val_annotations, args, plans
 ):
     # Computes number of tasks completed successfully in the sequence
     robot_obs, scene_obs = get_env_state_for_initial_condition(initial_state)
     env.reset(robot_obs=robot_obs, scene_obs=scene_obs) # Ensure consistent start
 
-    success_counter = 0
+    success_counter = 0 # NOTE - this means the first task is as important as the last task. Is this the case in their training?
     if args.debug:
         time.sleep(1)
         print()
@@ -210,7 +210,7 @@ def evaluate_sequence(
         print(f"Evaluating sequence: {' -> '.join(eval_sequence)}")
         print("Subtask: ", end="")
     for subtask in eval_sequence:
-        success = rollout(env, model, task_checker, args, subtask, lang_embeddings, val_annotations, plans)
+        success = rollout(env, model, task_oracle, args, subtask, lang_embeddings, val_annotations, plans)
         if success:
             success_counter += 1
         else:
@@ -219,6 +219,21 @@ def evaluate_sequence(
 
 
 def rollout(env, model, task_oracle, args, subtask, lang_embeddings, val_annotations, plans):
+    """Determines if task is successfully completed, returning True of False
+
+    Args:
+        env (_type_): _description_
+        model (_type_): _description_
+        task_oracle (_type_): _description_
+        args (_type_): _description_
+        subtask (_type_): _description_
+        lang_embeddings (_type_): _description_
+        val_annotations (_type_): _description_
+        plans (_type_): _description_
+
+    Returns:
+        boolean: True if task completed, False otherwise
+    """
     if args.debug:
         print(f"{subtask} ", end="")
         time.sleep(0.5)
@@ -230,10 +245,10 @@ def rollout(env, model, task_oracle, args, subtask, lang_embeddings, val_annotat
     model.reset()
     start_info = env.get_info()
 
-    plan, latent_goal = model.get_pp_plan_lang(obs, goal)
+    plan, latent_goal = model.get_pp_plan_lang(obs, goal) # Get the plan from the model
     plans[subtask].append((plan.cpu(), latent_goal.cpu()))
 
-    for step in range(args.ep_len):
+    for step in range(args.ep_len): # Hardcoded to 360, maximum number of steps model is allowed to take (time limit)
         action = model.step(obs, goal)
         obs, _, _, current_info = env.step(action)
         if args.debug:

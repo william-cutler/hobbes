@@ -4,11 +4,13 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+# NOTE - These encoders are almost identical. They're just neural networks!
 
+# Encodes an image representing the goal state of the environment?
 class VisualGoalEncoder(nn.Module):
     def __init__(
         self,
-        hidden_size: int,
+        hidden_size: int, # These are really amounts of features, not the features themselves
         latent_goal_features: int,
         in_features: int,
         l2_normalize_goal_embeddings: bool,
@@ -31,20 +33,20 @@ class VisualGoalEncoder(nn.Module):
             x = F.normalize(x, p=2, dim=1)
         return x
 
-
+# Encodes the language statement goal given to the robot?
 class LanguageGoalEncoder(nn.Module):
     def __init__(
         self,
         language_features: int,
         hidden_size: int,
         latent_goal_features: int,
-        word_dropout_p: float,
+        word_dropout_p: float, #The only thing 
         l2_normalize_goal_embeddings: bool,
         activation_function: str,
     ):
         super().__init__()
         self.l2_normalize_output = l2_normalize_goal_embeddings
-        self.act_fn = getattr(nn, activation_function)()
+        self.act_fn = getattr(nn, activation_function)() # Reflection
         self.mlp = nn.Sequential(
             nn.Dropout(word_dropout_p),
             nn.Linear(in_features=language_features, out_features=hidden_size),
