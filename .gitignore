@@ -136,6 +136,7 @@ dmypy.json
 dataset/task_D_D/*
 dataset/task_ABCD_D/*
 dataset/task_ABC_D/*
+lightning_logs/*
 
 .idea/*
 

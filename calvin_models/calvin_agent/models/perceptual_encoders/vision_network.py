@@ -6,6 +6,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.nn.parameter import Parameter
+import pytorch_lightning as pl
 
 
 class VisionNetwork(nn.Module):
@@ -28,16 +29,36 @@ class VisionNetwork(nn.Module):
         w, h = self.calc_out_size(w, h, 4, 0, 2)
         w, h = self.calc_out_size(w, h, 3, 0, 1)
         self.spatial_softmax = SpatialSoftmax(num_rows=w, num_cols=h, temperature=1.0)  # shape: [N, 128]
+
         # model
+        # conv1 = nn.Conv2d(in_channels=num_c, out_channels=32, kernel_size=8, stride=4, bias=False)
+        # print(conv1.weight.dtype)
+        # conv1 = torch.double
+
+        # conv2 = nn.Conv2d(in_channels=32, out_channels=64, kernel_size=4, stride=2, bias=False),  # shape: [N, 64, 23, 23]
+        # conv2.weight.dtype = torch.double
+
+        # conv3 = nn.Conv2d(in_channels=64, out_channels=64, kernel_size=3, stride=1, bias=False),  # shape: [N, 64, 23, 23]
+        # conv3.weight.dtype = torch.double
+
         self.conv_model = nn.Sequential(
             # input shape: [N, 3, 200, 200]
-            nn.Conv2d(in_channels=num_c, out_channels=32, kernel_size=8, stride=4),  # shape: [N, 32, 49, 49]
+            nn.Conv2d(in_channels=num_c, out_channels=32, kernel_size=8, stride=4, bias=False),  # shape: [N, 32, 49, 49]
             self.act_fn,
-            nn.Conv2d(in_channels=32, out_channels=64, kernel_size=4, stride=2),  # shape: [N, 64, 23, 23]
+            nn.Conv2d(in_channels=32, out_channels=64, kernel_size=4, stride=2, bias=False),  # shape: [N, 64, 23, 23]
             self.act_fn,
-            nn.Conv2d(in_channels=64, out_channels=64, kernel_size=3, stride=1),  # shape: [N, 64, 21, 21]
+            nn.Conv2d(in_channels=64, out_channels=64, kernel_size=3, stride=1, bias=False),  # shape: [N, 64, 21, 21]
             self.act_fn,
         )
+        # self.conv_model = nn.Sequential(
+        #     # input shape: [N, 3, 200, 200]
+        #     conv1,
+        #     self.act_fn,
+        #     conv2,
+        #     self.act_fn,
+        #     conv3,
+        #     self.act_fn,
+        # )
         self.fc1 = nn.Sequential(
             nn.Linear(in_features=128, out_features=512), self.act_fn, nn.Dropout(dropout_vis_fc)
         )  # shape: [N, 512]
