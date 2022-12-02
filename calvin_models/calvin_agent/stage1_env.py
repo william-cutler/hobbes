@@ -1,5 +1,5 @@
 from gym import spaces
-from calvin_env.envs.play_table_env import PlayTableSimEnv
+from calvin_env.calvin_env.envs.play_table_env import PlayTableSimEnv
 
 class SlideEnv(PlayTableSimEnv):
     def __init__(self,

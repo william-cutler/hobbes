@@ -1,4 +1,4 @@
-from calvin_models.calvin_agent.models.perceptual_encoders.vision_network import VisionNetwork, SpatialSoftmax
+from calvin_agent.models.perceptual_encoders.vision_network import VisionNetwork, SpatialSoftmax
 import torch
 from torch import nn
 from torch.nn import functional as F
@@ -20,8 +20,9 @@ class Stage1Model(pl.LightningModule):
 			nn.Linear(64, 32),
 			nn.LeakyReLU(),
 			nn.Linear(32, 7)
-			# TODO: gripper (final value in action) needs to be either 1 or -1 binary
 		)
+		# NOTE: gripper (final value in action) is forced to -1 or 1 binary at evaluation time
+
 
 	def forward(self, x):
 		embedding = self.vision_encoder(x)
@@ -39,6 +40,7 @@ class Stage1Model(pl.LightningModule):
 		self.log('train_loss', loss)
 		return loss
 
+	# NOTE: Not currently being used
 	def test_step(self, val_batch, batch_idx):
 		x, y = val_batch
 		y_hat = self(x)
