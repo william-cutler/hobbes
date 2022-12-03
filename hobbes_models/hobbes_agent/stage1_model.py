@@ -19,7 +19,8 @@ class Stage1Model(pl.LightningModule):
 			nn.LeakyReLU(),
 			nn.Linear(64, 32),
 			nn.LeakyReLU(),
-			nn.Linear(32, 7)
+			nn.Linear(32, 7),
+			#nn.Sigmoid(),
 		)
 		# NOTE: gripper (final value in action) is forced to -1 or 1 binary at evaluation time
 
@@ -46,5 +47,11 @@ class Stage1Model(pl.LightningModule):
 		y_hat = self(x)
 		loss = F.mse_loss(y_hat, y)
 		self.log('test_loss', loss)
+
+	def validation_step(self, val_batch, batch_idx):
+		x, y = val_batch
+		y_hat = self(x)
+		loss = F.mse_loss(y_hat, y)
+		self.log('val_loss', loss)
 
 
