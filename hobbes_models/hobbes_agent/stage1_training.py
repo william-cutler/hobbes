@@ -1,8 +1,9 @@
-from pathlib import Path
+import os
 import sys
-
-sys.path.insert(0, Path(__file__).absolute().parents[1].as_posix())
-print(Path(__file__).absolute().parents[1])
+# This fixes up dependency issues, with not being able to find dependencies in their expected places
+module_path = os.path.abspath(os.path.join('/home/grail/willaria_research/hobbes/calvin_env'))
+if module_path not in sys.path:
+    sys.path.append(module_path)
 
 from calvin_env.envs.play_table_env import PlayTableSimEnv
 import numpy as np
@@ -71,7 +72,7 @@ def get_task_timeframes(task_name, dataset_path):
             target_task_indxs.append(indx)
     return target_task_indxs
 
-def train_model(task_name ='turn_on_led', dataset_path='calvin_debug_dataset', model_param_path='checkpoints/model_params', val=False, batch_size=16, num_workers=1):
+def train_model(task_name ='turn_on_led', dataset_path='calvin_debug_dataset', model_param_path='checkpoints/model_params', val=False, batch_size=16, num_workers=1, num_gpus=0):
     """Train a model on a single task.
 
     Args:
@@ -96,7 +97,8 @@ def train_model(task_name ='turn_on_led', dataset_path='calvin_debug_dataset', m
     monitor_str = "val_loss" if val else "train_loss"
 
     checkpoint_callback = ModelCheckpoint(dirpath=model_param_path, save_top_k=3, monitor=monitor_str)
-    trainer = pl.Trainer(gpus=1, num_nodes=1, precision=16, limit_train_batches=0.5, callbacks=[checkpoint_callback], check_val_every_n_epoch=10)
+    final_iter_callback = ModelCheckpoint(dirpath=model_param_path, save_top_k=2, monitor="epoch", mode="max", filename="latest-{epoch:02d}")
+    trainer = pl.Trainer(gpus=num_gpus, num_nodes=1, precision=16, limit_train_batches=0.5, callbacks=[checkpoint_callback, final_iter_callback], check_val_every_n_epoch=10)
     trainer.fit(model, train_dataloader, val_dataloader)
 
     return model
@@ -178,10 +180,10 @@ def create_evaluation_env_config():
 
 def main():    
     # train model
-    # model = train_model(task_name ='turn_off_lightbulb', dataset_path='calvin_debug_dataset')
+    model = train_model(task_name ='turn_off_lightbulb', dataset_path='calvin_debug_dataset', num_gpus=0)
 
     # load model
-    model = Stage1Model.load_from_checkpoint("./checkpoints/model_params/epoch=579-step=2319.ckpt")
+    # model = Stage1Model.load_from_checkpoint("./checkpoints/model_params/epoch=579-step=2319.ckpt")
     
     env_config = create_evaluation_env_config()
     frames = build_frames(model, env_config, num_frames=100)

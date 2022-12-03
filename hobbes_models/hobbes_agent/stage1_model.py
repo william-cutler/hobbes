@@ -1,3 +1,10 @@
+import os
+import sys
+module_path = os.path.abspath(os.path.join('/home/grail/willaria_research/hobbes/calvin_models'))
+if module_path not in sys.path:
+    sys.path.append(module_path)
+
+
 from calvin_agent.models.perceptual_encoders.vision_network import VisionNetwork, SpatialSoftmax
 import torch
 from torch import nn

@@ -1,3 +1,4 @@
+
 cmake
 wheel
 numpy>1.2
@@ -7,17 +8,18 @@ matplotlib
 opencv-python
 omegaconf
 plotly
+setuptools<58
 pyhash
-pytorch-lightning==1.4.9
 # pip3 install torch==1.13.0+cu117 --extra-index-url https://download.pytorch.org/whl/cu117
-torch==1.13.0+cu117
-pytorch-cuda==11.7
+--find-links https://download.pytorch.org/whl/cu117
+torch==1.13.0 #+cu117
+torchmetrics==0.7.0
+pytorch-lightning==1.
 torchvision
 MulticoreTSNE
 gitpython
 scipy
 sentence-transformers
-setuptools==65.5.0
 gym
 moviepy
 tqdm
