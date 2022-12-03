@@ -92,7 +92,7 @@ def train_model(
     Args:
         task_name (str, optional): The name of the single task to train on. Defaults to 'turn_on_led'.
         dataset_path (str, optional): Path to the desired dataset relative to HOBBES_DATASET_ROOT_PATH. Defaults to 'calvin_debug_dataset'.
-        model_param_path (str, optional): Path to store model checkpoints in. Defaults to 'checkpoints/model_params'.
+        model_param_path (str, optional): Path to store model checkpoints in. Defaul\ts to 'checkpoints/model_params'.
         val (bool, optional): Whether to perform validation. Defaults to False.
         batch_size (int, optional): Training batch size. Defaults to 16.
         num_workers (int, optional): Number of workers for training dataloader. Defaults to 1.
@@ -166,6 +166,7 @@ def build_frames(model, env_config, num_frames=20):
         _type_: _description_
     """
     env = hydra.utils.instantiate(env_config.env)
+    print(env)
     curr_frame = env.render(mode="rgb_array")
     frames = [curr_frame]
     for _ in range(num_frames):
@@ -176,6 +177,7 @@ def build_frames(model, env_config, num_frames=20):
         action[0][6] = -1 if action[0][6] < 0 else 1
 
         observation, reward, done, info = env.step(action.detach().squeeze(0))
+        print(observation['scene_obs'])
 
         curr_frame = env.render(mode="rgb_array")
         frames.append(curr_frame)
@@ -207,7 +209,7 @@ def display_frames(frames, title="", ms_per_frame=50):
     cv2.destroyAllWindows()
 
 
-def create_evaluation_env_config():
+def create_evaluation_env_config(scene_obs_array, robot_obs_array):
     """Config for the evaluation environment copied from RL_WITH_CALVIN.ipynb
 
     Returns:
@@ -220,19 +222,69 @@ def create_evaluation_env_config():
         env_config.env["show_gui"] = False
         env_config.env["use_vr"] = False
         env_config.env["use_scene_info"] = True
+        
+        set_scene_config(env_config.scene, scene_obs_array)
+        set_robot_config(env_config.robot, robot_obs_array)
+        
+        print(env_config.scene.objects.fixed_objects.table.joints.base__slide.initial_state)
+        
 
     return env_config
 
+def set_scene_config(scene_config, scene_obs_array):
+    """(dtype=np.float32, shape=(24,))
+        sliding door (1): joint state
+        drawer (1): joint state
+        button (1): joint state
+        switch (1): joint state
+        lightbulb (1): on=1, off=0
+        green light (1): on=1, off=0
+        red block (6): (x, y, z, euler_x, euler_y, euler_z)
+        blue block (6): (x, y, z, euler_x, euler_y, euler_z)
+        pink block (6): (x, y, z, euler_x, euler_y, euler_z)
+
+    Args:
+        scene_config (_type_): _description_
+        scene_obs_array (_type_): _description_
+    """
+    table = scene_config.objects.fixed_objects.table
+    print(type(table.joints.base__slide.initial_state))
+    print(table.joints.base__slide.initial_state)
+    print(scene_obs_array)
+    table.joints.base__slide.initial_state = 0.30 #float(scene_obs_array[0])
+    table.joints.base__drawer.initial_state = float(scene_obs_array[1])
+
+    table.buttons.base__button.initial_state = float(scene_obs_array[2])
+    table.switches.base__switch.initial_state = 0.1 # float(scene_obs_array[3])
+    
+    # TODO: Warning we can't set light state directly for first frame
+    
+    blocks = scene_config.objects.movable_objects
+    
+    def set_block(block_name:str, scene_obs_start:int):
+        blocks[block_name]["initial_pos"] = [float(x) for x in list(scene_obs_array[scene_obs_start:scene_obs_start + 3])]
+        blocks[block_name]["initial_orn"] = [float(x) for x in list(scene_obs_array[scene_obs_start+3:scene_obs_start + 6])]
+
+    set_block("block_red", 6)
+    set_block("block_blue", 12)
+    set_block("block_pink", 18)
+
+
+def set_robot_config(robot_config, robot_obs):
+    pass
 
 def main():
     # train model
-    model = train_model(task_name="turn_off_lightbulb", dataset_path="calvin_debug_dataset", num_gpus=0)
+    # model = train_model(task_name="turn_off_lightbulb", dataset_path="calvin_debug_dataset", num_gpus=0)
 
     # load model
-    model = Stage1Model.load_from_checkpoint("./checkpoints/model_params/epoch=579-step=2319.ckpt")
-    env_config = create_evaluation_env_config()
-    frames = build_frames(model, env_config, num_frames=100)
-    display_frames(frames)
+    ep = np.load(get_episode_path(360575, HOBBES_DATASET_ROOT_PATH + "/calvin_debug_dataset/training/"))
+    env_config = create_evaluation_env_config(ep["scene_obs"], ep["robot_obs"])
+
+    model = Stage1Model.load_from_checkpoint("./checkpoints/model_params/latest-epoch=09.ckpt")
+    frames = build_frames(model, env_config, num_frames=5)
+    print(frames[0])
+    #360575
 
 
 if __name__ == "__main__":
