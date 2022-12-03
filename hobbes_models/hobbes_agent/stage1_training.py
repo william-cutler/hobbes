@@ -71,7 +71,7 @@ def get_task_timeframes(task_name, dataset_path):
             target_task_indxs.append(indx)
     return target_task_indxs
 
-def train_model(task_name ='turn_on_led', dataset_path='debug_dataset', val=True):
+def train_model(task_name ='turn_on_led', dataset_path='calvin_debug_dataset', model_param_path='checkpoints/model_params', val=False, batch_size=16, num_workers=1):
     """Train a model on a single task.
 
     Args:
@@ -90,24 +90,25 @@ def train_model(task_name ='turn_on_led', dataset_path='debug_dataset', val=True
     for timeframe in train_timeframes:
         train_dataset.extend(collect_frames(timeframe[0], timeframe[1], train_data_path))
     print('train dataset len', len(train_dataset))
-    train_dataloader = DataLoader(train_dataset, batch_size=128, num_workers=24)
+    train_dataloader = DataLoader(train_dataset, batch_size=batch_size, num_workers=num_workers)
 
-    val_dataloader = build_val_dataloader(task_name, dataset_path) if val else None
+    val_dataloader = build_val_dataloader(task_name, dataset_path, batch_size, num_workers) if val else train_dataloader
+    monitor_str = "val_loss" if val else "train_loss"
 
-    checkpoint_callback = ModelCheckpoint(dirpath="model_checkpoints_rel_1/", save_top_k=3, monitor="val_loss")
-    trainer = pl.Trainer(gpus=1, num_nodes=1, precision=16, limit_train_batches=0.5, callbacks=[checkpoint_callback], check_val_every_n_epoch=10, default_root_dir='./model_params_2')
+    checkpoint_callback = ModelCheckpoint(dirpath=model_param_path, save_top_k=3, monitor=monitor_str)
+    trainer = pl.Trainer(gpus=1, num_nodes=1, precision=16, limit_train_batches=0.5, callbacks=[checkpoint_callback], check_val_every_n_epoch=10)
     trainer.fit(model, train_dataloader, val_dataloader)
 
     return model
 
-def build_val_dataloader(task_name, dataset_path):
+def build_val_dataloader(task_name, dataset_path, batch_size, num_workers):
     val_data_path = HOBBES_DATASET_ROOT_PATH + dataset_path + '/validation/'
     val_timeframes = get_task_timeframes(task_name, val_data_path)
     val_dataset = []
     for timeframe in val_timeframes:
         val_dataset.extend(collect_frames(timeframe[0], timeframe[1], val_data_path))
     print('val dataset len', len(val_dataset))
-    val_dataloader = DataLoader(val_dataset, batch_size=128, num_workers=24)
+    val_dataloader = DataLoader(val_dataset, batch_size=batch_size, num_workers=num_workers)
     return val_dataloader
 
 def build_frames(model, env_config, num_frames=20):
@@ -177,13 +178,13 @@ def create_evaluation_env_config():
 
 def main():    
     # train model
-    # model = train_model(dataset_path='task_D_D')
+    # model = train_model(task_name ='turn_off_lightbulb', dataset_path='calvin_debug_dataset')
 
     # load model
-    model = Stage1Model.load_from_checkpoint("./model_checkpoints_abs_1/epoch=529-step=18019.ckpt")
+    model = Stage1Model.load_from_checkpoint("./checkpoints/model_params/epoch=579-step=2319.ckpt")
     
     env_config = create_evaluation_env_config()
-    frames = build_frames(model, env_config, num_frames=200)
+    frames = build_frames(model, env_config, num_frames=100)
     display_frames(frames)
 
 if __name__ == "__main__":
