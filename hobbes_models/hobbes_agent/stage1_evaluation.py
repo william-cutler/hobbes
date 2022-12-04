@@ -34,11 +34,11 @@ def initialize_env(robot_obs, scene_obs):
     env.reset(robot_obs, scene_obs)
     return env
     
-def generate_trajectory(env, model):
+def generate_trajectory(env, model, num_frames=20):
     frames = []
     actions = []
     
-    for _ in range(100):
+    for i in range(num_frames):
         # Get current frame
         curr_frame = env.render(mode="rgb_array")
         
@@ -54,11 +54,11 @@ def generate_trajectory(env, model):
 
         # Step env
         observation, reward, done, info = env.step(action.detach().squeeze(0))
+        
+        if i % 10 == 0:
+            print("Processed frame", i)
     
     return frames, actions
-
-
-    
 
     
 def main():
@@ -69,11 +69,12 @@ def main():
     env = initialize_env(ep["robot_obs"], ep["scene_obs"])
     
     # load model
-    model = Stage1Model.load_from_checkpoint("./checkpoints/task_D_D/turn_on_lightbulb/latest-epoch=999.ckpt")
-
+    #model = Stage1Model.load_from_checkpoint("./checkpoints/task_D_D/turn_on_lightbulb/latest-epoch=999.ckpt")
+    model = Stage1Model.load_from_checkpoint("./checkpoints/model_params/epoch=999-step=2000.ckpt")
+    
     # generate sample trajectory
     frames, actions = generate_trajectory(env, model)
-    
+
     display_frames(frames)        
 
 if __name__ == "__main__":
