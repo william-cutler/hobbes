@@ -275,22 +275,22 @@ def set_robot_config(robot_config, robot_obs):
 
 def main():
     # train model
-    # model = train_model(
-    #     ask_name="turn_on_lightbulb",
-    #     dataset_path="task_D_D",
-    #     model_param_path="checkpoints/task_D_D/turn_on_lightbulb",
-    #     batch_size=128,
-    #     num_workers=1,
-    #     num_gpus=1)
+    model = train_model(
+        ask_name="turn_on_lightbulb",
+        dataset_path="task_D_D",
+        model_param_path="checkpoints/task_D_D/turn_on_lightbulb",
+        batch_size=128,
+        num_workers=1,
+        num_gpus=1)
 
-    # load model
-    ep = np.load(get_episode_path(360575, HOBBES_DATASET_ROOT_PATH + "/calvin_debug_dataset/training/"))
-    env_config = create_evaluation_env_config(ep["scene_obs"], ep["robot_obs"])
+    # # load model
+    # ep = np.load(get_episode_path(360575, HOBBES_DATASET_ROOT_PATH + "/calvin_debug_dataset/training/"))
+    # env_config = create_evaluation_env_config(ep["scene_obs"], ep["robot_obs"])
 
-    model = Stage1Model.load_from_checkpoint("./checkpoints/task_D_D/turn_on_lightbulb/latest-epoch=999.ckpt")
-    frames = build_frames(model, env_config, num_frames=100)
-    display_frames(frames)
-    #360575
+    # model = Stage1Model.load_from_checkpoint("./checkpoints/task_D_D/turn_on_lightbulb/latest-epoch=999.ckpt")
+    # frames = build_frames(model, env_config, num_frames=100)
+    # display_frames(frames)
+    # #360575
 
 if __name__ == "__main__":
     main()
