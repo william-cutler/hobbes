@@ -1,11 +1,11 @@
-task_name: "turn_off_lightbulb" # 
+task_name: "turn_off_lightbulb"
 absolute_dataset_path: "/home/grail/willaria_research/hobbes/dataset/calvin_debug_dataset"
 model_save_path: "checkpoints/model_params"
 num_demonstrations: 1
 val: False
 batch_size: 16
 num_workers: 1
-num_gpus: 0
+num_gpus: 1
 max_epochs: 1
 epochs_between_val: 10
 action_type: "rel_actions"

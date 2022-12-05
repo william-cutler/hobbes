@@ -51,6 +51,7 @@ class HobbesLSTM(pl.LightningModule):
     def forward(self, demonstration_images, demonstration_images_num, runtime_image):
         ######################################## ENCODER ########################################
         # Encode demonstration input images (batch, img_embed_dim(64))
+        # Confound sequence and batch for Conv2D https://discuss.pytorch.org/t/processing-sequence-of-images-with-conv2d/37494
         batch_size = demonstration_images.shape[0]
         seq_length = demonstration_images.shape[1]
         demonstration_images_batch = demonstration_images.view(batch_size * seq_length, 3, 200, 200)
@@ -63,7 +64,7 @@ class HobbesLSTM(pl.LightningModule):
         demonstration_x = self.dropout(demonstration_x)
 
         # Pack sequence for input to encoder LSTM
-        demonstration_x = nn.utils.rnn.pack_padded_sequence(demonstration_x, demonstration_images_num, batch_first=True)
+        demonstration_x = nn.utils.rnn.pack_padded_sequence(demonstration_x, demonstration_images_num.cpu(), batch_first=True)
 
         # Get the output from the encoder LSTM
         _encoder_outputs, (encoder_final_hidden, _encoder_final_cell) = self.lstm_encoder(demonstration_x)
@@ -78,8 +79,9 @@ class HobbesLSTM(pl.LightningModule):
 
         # Concatenate the encoder's final hidden state to the encoded runtime image
         # (batch, img_embed_dim(64) + encoder_hidden_dim(64))
+
         runtime_x = torch.cat(
-            [runtime_x, encoder_final_hidden.squeeze()],
+            [runtime_x, encoder_final_hidden.squeeze().unsqueeze(0)], # TODO: At evaluation, getting dim errors, fixed with this weird trick
             dim=1,
         )
         # (batch, 128)
@@ -137,6 +139,34 @@ class HobbesLSTM(pl.LightningModule):
         # print(y)
         loss = F.mse_loss(y_hat, y)
         self.log('train_loss', loss)
+        return loss
+
+    def validation_step(
+        self,
+        train_batch: Tuple[Dict, torch.Tensor],
+        batch_idx: int,
+    ) -> torch.Tensor:
+        """_summary_
+
+        Args:
+                train_batch (tuple): ({'rgb_static': ..., 'rgb_gripper': ...}, robot_obs)
+                batch_idx (int): _description_
+
+        Returns:
+                torch.Tensor: _description_
+        """
+        # demonstration_images (list of tensor images), demonstration_images_num (number of demonstrations), runtime_image (single image to "decode")
+
+        x, y = train_batch
+        demonstration_images = x.get('demonstration_images')
+        demonstration_images_num = x.get('demonstration_images_num')
+        runtime_image = x.get('runtime_image')
+
+        y_hat = self(demonstration_images, demonstration_images_num, runtime_image)
+        # print(y_hat)
+        # print(y)
+        loss = F.mse_loss(y_hat, y)
+        self.log('val_loss', loss)
         return loss
 
 

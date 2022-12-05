@@ -1,7 +1,8 @@
-from stage1_utils import get_episode_path, preprocess_image, save_gif
+from hobbes_utils import *
 from pytorch_lightning.callbacks import ModelCheckpoint
 import pytorch_lightning as pl
 from lstm_model import HobbesLSTM
+from lstm_dataset import LSTMDataset
 from torch.utils.data import Dataset, DataLoader
 import torch
 import numpy as np
@@ -16,108 +17,6 @@ if module_path not in sys.path:
 
 # NOTE: Run from "hobbes_models/hobbes_agent/", "conda activate calvin_conda_env"
 HOBBES_DATASET_ROOT_PATH = "/home/grail/willaria_research/hobbes/dataset/"
-
-
-def collect_frames(start: int, stop: int, dataset_path: str, action_type: str = "rel_actions"):
-    """Loads the specified range of episodes (semi-closed) for creating a demonstration video to imitate.
-
-    Args:
-        start (_type_): _description_
-        stop (_type_): _description_
-
-    Returns:
-        _type_: List of pairs of static camera images and action taken at that step.
-    """
-    observations = []
-    actions = []
-    for i in range(start, stop):
-        ep = np.load(get_episode_path(i, dataset_path))
-        # imgs = {
-        #     'rgb_static': preprocess_image(ep["rgb_static"]),
-        #     'rgb_gripper': preprocess_image(ep["rgb_gripper"])
-        # }
-        # robot_obs = torch.tensor(ep['robot_obs']).float()
-
-        # observations.append((imgs, robot_obs))
-
-        observations.append(preprocess_image(ep["rgb_static"]))
-        actions.append(torch.tensor(ep[action_type]).float())  # 'actions' or 'rel_actions'
-    return observations, actions
-
-
-def get_task_timeframes(task_name: str, dataset_path: str, num_demonstrations: int) -> list:
-    """Returns the start and end of every episode corresponding to the specified task.
-
-    Args:
-        task_name (str): Name of the task to extract.
-        dataset_path (str): Path to the dataset
-
-    Returns:
-        list: List of pairs (episode_start_index, episode_end_index)
-    """
-    lang = np.load(dataset_path + "lang_annotations/auto_lang_ann.npy", allow_pickle=True)
-    lang = dict(enumerate(lang.flatten(), 1))[1]
-
-    target_task_indxs = []
-    for (task, indx) in zip(lang["language"]["task"], lang["info"]["indx"]):
-        if task == task_name:
-            target_task_indxs.append((indx[0] - 10, indx[1] + 50))
-        if (len(target_task_indxs) == num_demonstrations):
-            break
-    if (len(target_task_indxs) < num_demonstrations):
-        print(f"Warning: Requested {num_demonstrations} demonstrations but only found {len(target_task_indxs)}")
-    return target_task_indxs
-
-
-class LSTMDataset(Dataset):
-    """Dataset for LSTM model."""
-
-    def __init__(self, task_name: str, dataset_path: str, num_demonstrations: int):
-        """_summary_
-
-        Args:
-            demonstrations (list of list of frames): list of demonstration videos
-        """
-
-        train_timeframes = get_task_timeframes(
-            task_name=task_name, dataset_path=dataset_path, num_demonstrations=num_demonstrations)
-
-        demonstrations = []
-        target_actions = []
-        for timeframe in train_timeframes:
-            demonstration, actions = collect_frames(timeframe[0], timeframe[1], dataset_path, action_type="rel_actions")
-            demonstrations.append(torch.stack(demonstration))
-            target_actions.append(torch.stack(actions))
-
-        # print(actions)
-        self.demonstrations = demonstrations
-        self.actions = target_actions
-        self.frame_to_demo_num_and_frame_num = {}
-        i = 0
-        for d in range(len(demonstrations)):
-            for f in range(len(demonstrations[d])):
-                self.frame_to_demo_num_and_frame_num[i] = (d, f)
-                i += 1
-        self.len = len(self.frame_to_demo_num_and_frame_num)
-
-    def __len__(self):
-        return self.len
-
-    def __getitem__(self, idx):
-        if torch.is_tensor(idx):
-            idx = idx.tolist()
-
-        demo_idx, frame_num = self.frame_to_demo_num_and_frame_num[idx]
-        demo = self.demonstrations[demo_idx]
-        
-        # print(demo_idx, idx)
-        
-        item = {'demonstration_images': demo,
-                'demonstration_images_num': len(demo),
-                'runtime_image': demo[frame_num],
-                }
-
-        return item, self.actions[demo_idx][frame_num]
 
 
 def train_model(
@@ -195,7 +94,7 @@ def build_val_dataloader(task_name: str, dataset_path: str, batch_size: int = 16
     val_timeframes = get_task_timeframes(task_name, val_data_path)
     val_dataset = []
     for timeframe in val_timeframes:
-        val_dataset.extend(collect_frames(timeframe[0], timeframe[1], val_data_path))
+        val_dataset.extend(collect_frames(timeframe[0], timeframe[1], static_image_extractor, val_data_path=val_data_path))
     print("val dataset len", len(val_dataset))
     val_dataloader = DataLoader(val_dataset, batch_size=batch_size, num_workers=num_workers)
     return val_dataloader
@@ -210,10 +109,10 @@ def main():
         task_name="turn_off_lightbulb",
         dataset_path="calvin_debug_dataset",
         model=model,
-        model_save_path="checkpoints/v2/calvin_debug_dataset/turn_off_lightbulb/1000",
+        model_save_path="checkpoints/lstm/calvin_debug_dataset/turn_off_lightbulb/1000",
         batch_size=16,
-        num_workers=1,
-        num_gpus=0,
+        num_workers=24,
+        num_gpus=1,
         max_epochs=1000,
         val_epochs=10)
 
