@@ -26,7 +26,6 @@ def initialize_env(robot_obs, scene_obs):
     return env
 
 
-@hydra.main(config_path="./conf/eval_config.yaml")
 def generate_trajectory(cfg, env, model):
     """Simulates the trajectory predicted by the model in the environment.
 
@@ -82,8 +81,9 @@ def display_frames(frames, title="", ms_per_frame=50):
     cv2.waitKey(0)
     cv2.destroyAllWindows()
 
-
-def main():
+@hydra.main(config_path="conf", config_name="eval_config")
+def main(cfg):
+    hydra.core.global_hydra.GlobalHydra.instance().clear()
     # set up the start frame for the episode
     ep = np.load(
         get_episode_path(360571, "/home/grail/willaria_research/hobbes/dataset/calvin_debug_dataset/training/")
@@ -95,14 +95,15 @@ def main():
     # load model
     # model = Stage1Model.load_from_checkpoint("./checkpoints/task_D_D/turn_on_lightbulb/latest-epoch=999.ckpt")
     model = Stage1Model.load_from_checkpoint(
-        "./checkpoints/calvin_debug_dataset/turn_off_lightbulb/latest-epoch=999-v2.ckpt"
+        "./checkpoints/model_params/epoch=9-step=40.ckpt"
     )
 
     # generate sample trajectory
-    frames, actions = generate_trajectory(env, model)
+    frames, actions = generate_trajectory(cfg, env, model)
 
     save_gif(frames, file_name="sample.gif")
     # display_frames(frames)
+    hydra.core.global_hydra.GlobalHydra.instance().clear()
 
 
 # NOTE: Run from "hobbes_models/hobbes_agent/", "conda activate calvin_conda_env"

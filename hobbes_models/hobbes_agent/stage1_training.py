@@ -12,6 +12,7 @@ from torch.utils.data import DataLoader
 from stage1_model import Stage1Model
 import pytorch_lightning as pl
 from pytorch_lightning.callbacks import ModelCheckpoint
+import hydra
 from stage1_utils import get_episode_path, preprocess_image, save_gif
 
 
@@ -31,7 +32,7 @@ def collect_frames(start: int, stop: int, dataset_path: str, action_type: str):
         ep = np.load(get_episode_path(i, dataset_path))
         images.append(preprocess_image(ep["rgb_static"]))
         actions.append(torch.from_numpy(np.asarray(ep[action_type])).float())  # 'actions' or 'rel_actions'
-    save_gif(images, "target.gif")
+    #save_gif(images, "target.gif")
     return list(zip(images, actions))
 
 
@@ -59,7 +60,6 @@ def get_task_timeframes(task_name: str, dataset_path: str, num_demonstrations: i
     return target_task_indxs
 
 
-@hydra.main(config_path="./conf/model_config.yaml")
 def train_model(cfg, model: Stage1Model = None) -> Stage1Model:
     """Train a model on a single task.
 
@@ -72,7 +72,7 @@ def train_model(cfg, model: Stage1Model = None) -> Stage1Model:
     if not model:
         model = Stage1Model()
 
-    train_data_path = cfg.absolute_data_path + "/training/"
+    train_data_path = cfg.absolute_dataset_path + "/training/"
     train_timeframes = get_task_timeframes(cfg.task_name, train_data_path, cfg.num_demonstrations)
     print(f"Found {len(train_timeframes)} demonstrations for the task {cfg.task_name}")
     train_dataset = []
@@ -103,9 +103,9 @@ def train_model(cfg, model: Stage1Model = None) -> Stage1Model:
     return model
 
 
-@hydra.main(config_path="./conf/model_config.yaml")
+
 def build_val_dataloader(cfg, val_timeframes) -> DataLoader:
-    val_data_path = cfg.absolute_data_path + "/validation/"
+    val_data_path = cfg.absolute_dataset_path + "/validation/"
     val_dataset = []
     for timeframe in val_timeframes:
         val_dataset.extend(collect_frames(timeframe[0], timeframe[1], val_data_path, cfg.action_type))
@@ -113,24 +113,13 @@ def build_val_dataloader(cfg, val_timeframes) -> DataLoader:
     val_dataloader = DataLoader(val_dataset, batch_size=cfg.batch_size, num_workers=cfg.num_workers)
     return val_dataloader
 
-
-def main():
-    model = Stage1Model.load_from_checkpoint(
-        "./checkpoints/calvin_debug_dataset/turn_off_lightbulb/latest-epoch=999-v2.ckpt"
-    )
+@hydra.main(config_path="conf", config_name="model_config")
+def main(cfg):
 
     # train model
-    train_model(model=model)
-
-    # # load model
-    # ep = np.load(get_episode_path(360575, HOBBES_DATASET_ROOT_PATH + "/calvin_debug_dataset/training/"))
-    # env_config = create_evaluation_env_config(ep["scene_obs"], ep["robot_obs"])
-
-    # model = Stage1Model.load_from_checkpoint("./checkpoints/task_D_D/turn_on_lightbulb/latest-epoch=999.ckpt")
-    # frames = build_frames(model, env_config, num_frames=100)
-    # display_frames(frames)
-    #
-
+    train_model(cfg, model=Stage1Model())  
+    
+    hydra.core.global_hydra.GlobalHydra.instance().clear()
 
 # NOTE: Run from "hobbes_models/hobbes_agent/", "conda activate calvin_conda_env"
 if __name__ == "__main__":

@@ -23,5 +23,5 @@ def preprocess_image(img: np.ndarray) -> torch.Tensor:
 def save_gif(frames, file_name='sample.gif'):
     toPilImage = ToPILImage()
     pil_frames = [toPilImage(frame) for frame in frames]
-    pil_frames[0].save('recordings/' + file_name,
+    pil_frames[0].save('/recordings/' + file_name,
                save_all=True, append_images=pil_frames[1:], optimize=False, duration=50, loop=0)
