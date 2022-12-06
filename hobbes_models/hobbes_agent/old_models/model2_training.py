@@ -119,7 +119,7 @@ def train_model(
         dirpath=model_save_path, save_top_k=2, monitor="epoch", mode="max", filename="latest-{epoch:02d}"
     )
 
-    tb_logger = pl_loggers.TensorBoardLogger(save_dir="logs/model2/turn_on_lightbulb")
+    tb_logger = pl_loggers.TensorBoardLogger(save_dir="logs/model2/push_pink_block_right")
 
     trainer = pl.Trainer(
         accelerator=accelerator,
@@ -164,10 +164,10 @@ def main():
 
     # train model
     train_model(
-        task_name="turn_on_lightbulb",
+        task_name="push_pink_block_right",
         dataset_path="task_D_D",
         model=model,
-        model_save_path="../checkpoints/v2/task_D_D/turn_on_lightbulb/",
+        model_save_path="../checkpoints/v2/task_D_D/push_pink_block_right/",
         num_demonstrations=1000,
         batch_size=256,
         num_workers=8,

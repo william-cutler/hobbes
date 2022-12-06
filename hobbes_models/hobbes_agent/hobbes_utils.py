@@ -3,6 +3,11 @@ import numpy as np
 from typing import Callable, Any
 import torch
 import cv2
+from typing import List, Tuple, Dict, Callable
+import hydra
+from old_models.model2_eval import generate_trajectory_full_observations
+from torch import nn
+
 
 def get_episode_path(frame_num: int, dataset_path: str, pad_len: int = 7):
     padded_num = str(frame_num).rjust(pad_len, "0")
@@ -95,3 +100,43 @@ def display_frames(frames, title="", ms_per_frame=50):
             break
     cv2.waitKey(0)
     cv2.destroyAllWindows()
+    
+    
+def initialize_env(robot_obs, scene_obs):
+    with hydra.initialize(config_path="../../calvin_env/conf/"):
+        env_config = hydra.compose(config_name="config_data_collection.yaml", overrides=["cameras=static_and_gripper"])
+        # env_config["scene"] = "calvin_scene_B"
+        # env_config.env["use_egl"] = False
+        # env_config.env["show_gui"] = False
+        env_config.env["use_vr"] = False
+        # env_config.env["use_scene_info"] = True
+        env = hydra.utils.instantiate(env_config.env)
+    env.reset(robot_obs, scene_obs)
+    return env
+
+
+def model_evaluation_trajectory_loss(model, demonstration: List, loss_func: Callable) -> float:
+    """_summary_
+
+    Args:
+        model (Model2): _description_
+        demonstration (List): List of episodes in order in the demonstration.
+
+    Returns:
+        float: _description_
+    """
+    
+    
+    first_episode = demonstration[0]
+    init_environment = initialize_env(first_episode["robot_obs"], first_episode["scene_obs"])
+    
+    environment_states, predicted_actions = generate_trajectory_full_observations(init_environment, model, len(demonstration))
+    return loss_func(demonstration_states, demonstration_actions, environment_states, predicted_actions)
+
+
+def actions_trajectory_loss(demonstration_states, demonstration_actions, environment_states, predicted_actions):
+    loss = nn.MSELoss(reduction='mean')
+    
+    demo_actions_tensor = torch.stack(demonstration_actions)
+    pred_actions_tensor = torch.stack(predicted_actions).squeeze(1)
+    return loss(input=pred_actions_tensor, target=demo_actions_tensor)

@@ -17,6 +17,7 @@ import torch
 import cv2
 from model2_training import collect_frames, get_task_timeframes
 from hobbes_utils import preprocess_image, get_episode_path, save_gif
+from typing import List
 
 
 # NOTE: Run from "hobbes_models/hobbes_agent/", "conda activate calvin_conda_env"
@@ -80,6 +81,53 @@ def generate_trajectory(env, model, num_frames=20):
     
     return frames, actions
 
+
+def generate_trajectory_full_observations(env, model, num_frames=20):
+    """Simulates the trajectory predicted by the model in the environment.
+
+    Args:
+        model (_type_): Trained model to predict actions at each timestep.
+        env_config (_type_): Config for the environment
+        num_frames (int, optional): Number of steps to predict. Defaults to 20.
+
+    Returns:
+        _type_: _description_
+    """
+    environment_states = []
+    predicted_actions = []
+    
+    for i in range(num_frames):
+        # Get current frame
+        curr_frame = env.render(mode="rgb_array")
+
+       
+        obs = env.get_obs()
+        # unsqueeze to emulate batch size of 1
+        imgs = {
+            'rgb_static': preprocess_image(obs["rgb_obs"]["rgb_static"]).unsqueeze(0),
+            'rgb_gripper': preprocess_image(obs["rgb_obs"]["rgb_gripper"]).unsqueeze(0)
+        }
+        robot_obs = torch.tensor(obs['robot_obs']).float().unsqueeze(0)
+        # Generate action at current frame
+        action = model(imgs, robot_obs)
+        
+        # Save to lists
+        environment_states.append(obs)
+        predicted_actions.append(action)
+
+        # Force gripper to binary -1 or 1
+        action[0][6] = -1 if action[0][6] < 0 else 1
+
+        action_dict = {"type":"cartesian_rel", "action":action.detach().squeeze(0)}
+        # Step env
+        observation, reward, done, info = env.step(action_dict)
+        
+        if i % 10 == 0:
+            print("Processed frame", i)
+    
+    return environment_states, predicted_actions
+
+
 def display_frames(frames, title="", ms_per_frame=50):
     """Press any key to start video, once finished press a key to close. DO NOT HIT RED X!
 
@@ -99,6 +147,26 @@ def display_frames(frames, title="", ms_per_frame=50):
             break
     cv2.waitKey(0)
     cv2.destroyAllWindows()
+    
+def model_evaluation_trajectory_loss(model: Model2, demonstration: List) -> float:
+    """_summary_
+
+    Args:
+        model (Model2): _description_
+        demonstration (List): List of episodes in order in the demonstration.
+
+    Returns:
+        float: _description_
+    """
+    
+    
+    first_episode = demonstration[0]
+    init_environment = initialize_env(first_episode["robot_obs"], first_episode["scene_obs"])
+    
+    frames, actions = generate_trajectory_full_observations(init_environment, model, len(demonstration))
+
+    
+
     
 def main():
     dataset_name = 'task_D_D'
