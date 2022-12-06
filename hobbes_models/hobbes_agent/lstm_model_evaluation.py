@@ -1,10 +1,3 @@
-from lstm_model_training import LSTMDataset, collect_frames, get_task_timeframes
-from lstm_model import HobbesLSTM
-from hobbes_utils import *
-import cv2
-import hydra
-import torch
-import numpy as np
 import os
 import sys
 
@@ -12,6 +5,13 @@ import sys
 module_path = os.path.abspath(os.path.join("/home/grail/willaria_research/hobbes/calvin_env"))
 if module_path not in sys.path:
     sys.path.append(module_path)
+    
+from lstm_model_training import LSTMDataset, collect_frames, get_task_timeframes
+from lstm_model import HobbesLSTM
+from hobbes_utils import *
+import hydra
+import torch
+import numpy as np
 
 
 # NOTE: Run from "hobbes_models/hobbes_agent/", "conda activate calvin_conda_env"

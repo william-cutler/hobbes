@@ -1,11 +1,3 @@
-from hobbes_utils import *
-from pytorch_lightning.callbacks import ModelCheckpoint
-import pytorch_lightning as pl
-from lstm_model import HobbesLSTM
-from lstm_dataset import LSTMDataset
-from torch.utils.data import Dataset, DataLoader
-import torch
-import numpy as np
 import os
 import sys
 
@@ -13,6 +5,17 @@ import sys
 module_path = os.path.abspath(os.path.join("/home/grail/willaria_research/hobbes/calvin_env"))
 if module_path not in sys.path:
     sys.path.append(module_path)
+
+from hobbes_utils import *
+from pytorch_lightning.callbacks import ModelCheckpoint
+from pytorch_lightning import loggers as pl_loggers
+import pytorch_lightning as pl
+from lstm_model import HobbesLSTM
+from lstm_dataset import LSTMDataset
+from torch.utils.data import Dataset, DataLoader
+import torch
+import numpy as np
+
 
 
 # NOTE: Run from "hobbes_models/hobbes_agent/", "conda activate calvin_conda_env"
@@ -64,21 +67,24 @@ def train_model(
         dirpath=model_save_path, save_top_k=2, monitor="epoch", mode="max", filename="latest-{epoch:02d}"
     )
 
+    tb_logger = pl_loggers.TensorBoardLogger(save_dir="logs/lstm/task_D_D/turn_off_lightbulb")
+
     trainer = pl.Trainer(
         gpus=num_gpus,
         num_nodes=1,
         precision=16,
         # limit_train_batches=0.5,
         callbacks=[checkpoint_callback, final_iter_callback],
-        check_val_every_n_epoch=val_epochs,
-        max_epochs=max_epochs
+        logger=tb_logger,
+        check_val_every_n_epoch=1,
+        max_epochs=max_epochs,
     )
     trainer.fit(model, train_dataloader, val_dataloader)
 
     return model
 
 
-def build_val_dataloader(task_name: str, dataset_path: str, batch_size: int = 16, num_workers: int = 1) -> DataLoader:
+def build_val_dataloader(task_name: str, dataset_path: str, batch_size: int = 16, num_demonstrations=1, num_workers: int = 1) -> DataLoader:
     """Builds the
 
     Args:
@@ -91,10 +97,11 @@ def build_val_dataloader(task_name: str, dataset_path: str, batch_size: int = 16
         DataLoader: _description_
     """
     val_data_path = HOBBES_DATASET_ROOT_PATH + dataset_path + "/validation/"
-    val_timeframes = get_task_timeframes(task_name, val_data_path)
-    val_dataset = []
-    for timeframe in val_timeframes:
-        val_dataset.extend(collect_frames(timeframe[0], timeframe[1], static_image_extractor, val_data_path=val_data_path))
+
+    val_data_path = HOBBES_DATASET_ROOT_PATH + dataset_path + "/training/"
+
+    val_dataset = LSTMDataset(task_name, val_data_path, num_demonstrations)
+
     print("val dataset len", len(val_dataset))
     val_dataloader = DataLoader(val_dataset, batch_size=batch_size, num_workers=num_workers)
     return val_dataloader
@@ -107,14 +114,16 @@ def main():
     # train model
     train_model(
         task_name="turn_off_lightbulb",
-        dataset_path="calvin_debug_dataset",
+        dataset_path="task_D_D",
         model=model,
-        model_save_path="checkpoints/lstm/calvin_debug_dataset/turn_off_lightbulb/1000",
+        model_save_path="checkpoints/lstm/task_D_D/turn_off_lightbulb",
+        num_demonstrations=1000,
+        val=True,
         batch_size=16,
-        num_workers=24,
+        num_workers=8,
         num_gpus=1,
         max_epochs=1000,
-        val_epochs=10)
+        val_epochs=1)
 
     # # load model
     # ep = np.load(get_episode_path(360575, HOBBES_DATASET_ROOT_PATH + "/calvin_debug_dataset/training/"))

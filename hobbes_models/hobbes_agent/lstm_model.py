@@ -1,3 +1,9 @@
+import os
+import sys
+module_path = os.path.abspath(os.path.join('/home/grail/willaria_research/hobbes/calvin_models'))
+if module_path not in sys.path:
+    sys.path.append(module_path)
+    
 import pytorch_lightning as pl
 from torchvision import transforms
 from torchvision.datasets import MNIST
@@ -8,11 +14,7 @@ from torch import nn
 import torch
 from typing import Dict, Tuple
 from calvin_agent.models.perceptual_encoders.vision_network import VisionNetwork
-import os
-import sys
-module_path = os.path.abspath(os.path.join('/home/grail/willaria_research/hobbes/calvin_models'))
-if module_path not in sys.path:
-    sys.path.append(module_path)
+
 
 # https://fairseq.readthedocs.io/en/latest/tutorial_simple_lstm.html
 
@@ -45,7 +47,7 @@ class HobbesLSTM(pl.LightningModule):
         self.output_projection = nn.Linear(decoder_hidden_dim, 7)
 
         # Normalize to range (-1, 1) for actions
-        self.normalize = nn.Sigmoid()
+        self.normalize = nn.Tanh()
 
     # Assuming we are given a sequence of demonstration images, and one single image from runtime
     def forward(self, demonstration_images, demonstration_images_num, runtime_image):
@@ -79,9 +81,8 @@ class HobbesLSTM(pl.LightningModule):
 
         # Concatenate the encoder's final hidden state to the encoded runtime image
         # (batch, img_embed_dim(64) + encoder_hidden_dim(64))
-
         runtime_x = torch.cat(
-            [runtime_x, encoder_final_hidden.squeeze().unsqueeze(0)], # TODO: At evaluation, getting dim errors, fixed with this weird trick
+            [runtime_x, encoder_final_hidden.squeeze()], #.unsqueeze(0)], # TODO: At evaluation, getting dim errors, fixed with this weird trick
             dim=1,
         )
         # (batch, 128)

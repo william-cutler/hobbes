@@ -12,7 +12,7 @@ class LSTMDataset(Dataset):
         """
 
         train_timeframes = get_task_timeframes(
-            task_name=task_name, dataset_path=dataset_path, num_demonstrations=num_demonstrations)
+            target_task_name=task_name, dataset_path=dataset_path, num_demonstrations=num_demonstrations)
 
         demonstrations = []
         target_actions = []

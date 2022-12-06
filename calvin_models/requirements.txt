@@ -14,7 +14,7 @@ pyhash
 --find-links https://download.pytorch.org/whl/cu117
 torch==1.13.0 #+cu117
 torchmetrics==0.7.0
-pytorch-lightning==1.
+pytorch-lightning==1.8.3.post1
 torchvision
 MulticoreTSNE
 gitpython

@@ -26,7 +26,7 @@ def save_gif(frames, file_name='sample.gif'):
     pil_frames[0].save('/home/grail/willaria_research/hobbes/hobbes_models/hobbes_agent/recordings/' + file_name,
                save_all=True, append_images=pil_frames[1:], optimize=False, duration=50, loop=0)
 
-def collect_frames(start: int, stop: int, dataset_path: str, observation_extractor: Callable, action_type: str = "rel_actions"):
+def collect_frames(start: int, stop: int, dataset_path: str, observation_extractor: Callable = lambda ep: static_image_extractor(ep), action_type: str = "rel_actions"):
     """Loads the specified range of episodes (semi-closed) for creating a demonstration video to imitate.
 
     Args:
