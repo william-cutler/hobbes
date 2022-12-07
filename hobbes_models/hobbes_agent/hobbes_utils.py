@@ -5,7 +5,6 @@ import torch
 import cv2
 from typing import List, Tuple, Dict, Callable
 import hydra
-from old_models.model2_eval import generate_trajectory_full_observations
 from torch import nn
 from pathlib import Path
 from omegaconf import OmegaConf
@@ -13,7 +12,7 @@ from omegaconf import OmegaConf
 
 def get_episode_path(frame_num: int, dataset_path: str, pad_len: int = 7):
     padded_num = str(frame_num).rjust(pad_len, "0")
-    return dataset_path + "episode_" + padded_num + ".npz"
+    return dataset_path + "episode_" + str(padded_num) + ".npz"
 
 
 def preprocess_image(img: np.ndarray) -> torch.Tensor:
@@ -121,7 +120,7 @@ def display_frames(frames, title="", ms_per_frame=50):
     cv2.destroyAllWindows()
 
 
-def all_trajectory_info(action_predictor: Callable, ep_range: Tuple, data_path: str, num_frames) -> float:
+def all_trajectory_info(action_predictor: Callable, episode_range: Tuple, data_path: str, num_frames) -> float:
     """Computes loss for an entire predicted trajectory, comparing with the demonstration, according to loss_func
 
     Args:
@@ -133,9 +132,7 @@ def all_trajectory_info(action_predictor: Callable, ep_range: Tuple, data_path: 
     Returns:
         _type_: trajectory loss
     """
-    data = collect_frames(ep_range[0], ep_range[1], data_path)
-    demo_obs = [ob for ob, act in data]
-    demo_actions = [act for ob, act in data]
+    demo_obs, demo_actions = collect_frames(episode_range[0], episode_range[1], data_path, observation_extractor=lambda x: x)
     first_obs = demo_obs[0]
     init_environment = initialize_env(first_obs["robot_obs"], first_obs["scene_obs"])
 
@@ -147,61 +144,6 @@ def all_trajectory_info(action_predictor: Callable, ep_range: Tuple, data_path: 
     # predicted_env_observations = [state[0] for state in predicted_env_states]
 
     return demo_obs, demo_actions, predicted_env_states, predicted_actions
-
-
-def get_task_success_func(task_str):
-    return lambda do, da, pe, pa: task_success(pe, task_str)
-
-
-def task_success(predicted_env_states, task_str: str):
-    conf_dir = Path(__file__).absolute().parents[3] / "calvin_models/calvin_agent/conf"
-    task_cfg = OmegaConf.load(conf_dir / "callbacks/rollout/tasks/new_playtable_tasks.yaml")
-    task_oracle = hydra.utils.instantiate(task_cfg)
-    start_info = predicted_env_states[0][0]
-    for _, current_info in predicted_env_states:
-        # check if current step solves a task
-        current_task_info = task_oracle.get_task_info_for_set(start_info, current_info, {task_str})
-        if len(current_task_info) > 0:
-            print("SUCCESS")
-            return 1
-    print("FAIL")
-    return 0
-
-
-def compute_joint_loss(demo_obs, predicted_env_states):
-    """
-    Computes loss by comparing joint positions at each frame from proprioceptive data.
-    """
-    predicted_env_observations = [state[0] for state in predicted_env_states]
-
-    predicted_joint_positions = torch.stack([obs["robot_obs"] for obs in predicted_env_observations])
-    actual_joint_positions = torch.stack([obs["robot_obs"] for obs in demo_obs])
-    loss = nn.MSELoss(reduction="mean")
-    return loss(input=actual_joint_positions, target=predicted_joint_positions)
-
-
-def compute_action_loss(demo_actions, predicted_actions):
-    """
-    Computes loss by comparing action vectors at each frame from proprioceptive data.
-    """
-    loss = nn.MSELoss(reduction="mean")
-
-    demo_actions_tensor = torch.stack(demo_actions)
-    pred_actions_tensor = torch.stack(predicted_actions).squeeze(1)
-    return loss(input=pred_actions_tensor, target=demo_actions_tensor)
-
-
-def initialize_env(robot_obs, scene_obs):
-    with hydra.initialize(config_path="../../calvin_env/conf/"):
-        env_config = hydra.compose(config_name="config_data_collection.yaml", overrides=["cameras=static_and_gripper"])
-        # env_config["scene"] = "calvin_scene_B"
-        # env_config.env["use_egl"] = False
-        # env_config.env["show_gui"] = False
-        env_config.env["use_vr"] = False
-        # env_config.env["use_scene_info"] = True
-        env = hydra.utils.instantiate(env_config.env)
-    env.reset(robot_obs, scene_obs)
-    return env
 
 
 def generate_trajectory_full_observations(env, action_predictor, num_frames=20):
@@ -237,3 +179,56 @@ def generate_trajectory_full_observations(env, action_predictor, num_frames=20):
             print("Processed frame", i)
 
     return environment_states, predicted_actions
+
+
+def task_success(predicted_env_states, task_str: str):
+    conf_dir = Path(__file__).absolute().parents[2] / "calvin_models/conf"
+    task_cfg = OmegaConf.load(conf_dir / "callbacks/rollout/tasks/new_playtable_tasks.yaml")
+    task_oracle = hydra.utils.instantiate(task_cfg)
+    start_info = predicted_env_states[0][1]
+    step_num = 1
+    for _, current_info in predicted_env_states[1:]:
+        # check if current step solves a task
+        current_task_info = task_oracle.get_task_info_for_set(start_info, current_info, {task_str})
+        if len(current_task_info) > 0:
+            print("SUCCESS")
+            return step_num
+        step_num += 1
+    print("FAIL")
+    return -1
+
+
+def compute_joint_loss(demo_obs, predicted_env_states):
+    """
+    Computes loss by comparing joint positions at each frame from proprioceptive data.
+    """
+    predicted_env_observations = [state[0] for state in predicted_env_states]
+
+    predicted_joint_positions = torch.stack([torch.tensor(obs["robot_obs"]) for obs in predicted_env_observations])
+    actual_joint_positions = torch.stack([torch.tensor(obs["robot_obs"]) for obs in demo_obs])
+    loss = nn.MSELoss(reduction="mean")
+    return loss(input=actual_joint_positions, target=predicted_joint_positions)
+
+
+def compute_action_loss(demo_actions, predicted_actions):
+    """
+    Computes loss by comparing action vectors at each frame from proprioceptive data.
+    """
+    loss = nn.MSELoss(reduction="mean")
+
+    demo_actions_tensor = torch.stack(demo_actions)
+    pred_actions_tensor = torch.stack(predicted_actions).squeeze(1)
+    return loss(input=pred_actions_tensor, target=demo_actions_tensor)
+
+
+def initialize_env(robot_obs, scene_obs):
+    with hydra.initialize(config_path="../../calvin_env/conf/"):
+        env_config = hydra.compose(config_name="config_data_collection.yaml", overrides=["cameras=static_and_gripper"])
+        # env_config["scene"] = "calvin_scene_B"
+        # env_config.env["use_egl"] = False
+        # env_config.env["show_gui"] = False
+        env_config.env["use_vr"] = False
+        env_config.env["use_scene_info"] = True
+        env = hydra.utils.instantiate(env_config.env)
+    env.reset(robot_obs, scene_obs)
+    return env

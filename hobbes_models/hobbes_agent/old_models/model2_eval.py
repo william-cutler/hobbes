@@ -17,6 +17,7 @@ from torch import nn
 import torch
 from hobbes_utils import *
 from typing import List
+from termcolor import colored
 
 
 # NOTE: Run from "hobbes_models/hobbes_agent/", "conda activate calvin_conda_env"
@@ -103,10 +104,6 @@ def main():
     train_data_path = HOBBES_DATASET_ROOT_PATH + dataset_name + "/training/"
     val_data_path = HOBBES_DATASET_ROOT_PATH + dataset_name + "/validation/"
 
-    spamwriter = csv.writer(csvfile, delimiter=" ", quotechar="|", quoting=csv.QUOTE_MINIMAL)
-    spamwriter.writerow(["Spam"] * 5 + ["Baked Beans"])
-    spamwriter.writerow(["Spam", "Lovely Spam", "Wonderful Spam"])
-
     for train_or_val in ("train", "val"):
         if train_or_val == "train":
             data_path = train_data_path
@@ -115,11 +112,11 @@ def main():
             data_path = val_data_path
         print("using dataset", data_path)
 
-        with open(f"model2_eval-{data_path}-{task_name}.csv", "w", newline="") as csvfile:
-            csv_writer = csv.writer(csvfile, delimiter=" ", quotechar="|", quoting=csv.QUOTE_MINIMAL)
+        with open(f"../eval_data/model2_eval-{dataset_name}-{train_or_val}-{task_name}.csv", "w", newline="") as csvfile:
+            my_writer = csv.writer(csvfile, delimiter=",", quotechar="|", quoting=csv.QUOTE_MINIMAL)
 
             # set up the start frame for the episode
-            episode_ranges = get_task_timeframes(task_name, data_path, 1000)
+            episode_ranges = get_task_timeframes(task_name, data_path, 10)
 
             for episode_range in episode_ranges:
                 print(
@@ -128,25 +125,25 @@ def main():
 
                 # load model
                 model = Model2.load_from_checkpoint(
-                    "../checkpoints/v2/task_D_D/" + task_name + "/latest-epoch=999.ckpt"
+                    "../checkpoints/v2/task_D_D/" + task_name + "/trained_model-epoch=999.ckpt"
                 )
 
                 # Generate enough trajectory for whichever of our eval metrics needs the most
-                num_frames = max(400, episode_range[1] - episode_range[0])
+                num_frames = 3 * (episode_range[1] - episode_range[0])
 
                 demo_obs, demo_actions, predicted_env_states, predicted_actions = all_trajectory_info(
-                    lambda obs: model2_pred_action(model, obs), episode_range, compute_action_loss, num_frames
+                    action_predictor=lambda obs: model2_pred_action(model, obs), episode_range=episode_range, data_path=data_path, num_frames=num_frames
                 )
 
-                action_loss = compute_action_loss(demo_actions, predicted_actions[: len(demo_actions)])
-                joint_loss = compute_joint_loss(demo_obs, predicted_env_states[: len(demo_obs)])
+                action_loss = compute_action_loss(demo_actions, predicted_actions[: len(demo_actions)]).detach().numpy()
+                joint_loss = compute_joint_loss(demo_obs, predicted_env_states[: len(demo_obs)]).detach().numpy()
                 success = task_success(predicted_env_states, task_name)
 
-                csv_writer.write_row(
+                my_writer.writerow(
                     [
                         dataset_name,
+                        train_or_val,
                         task_name,
-                        data_path,
                         episode_range[0],
                         episode_range[1],
                         action_loss,
@@ -154,22 +151,22 @@ def main():
                         success,
                     ]
                 )
+                successful = success >= 1
+                print(colored(f"Action loss for trajectory of {len(demo_obs)} timesteps: {action_loss}", 'yellow'))
+                print(colored(f"Joint loss for trajectory of {len(demo_obs)} timesteps: {joint_loss}", 'yellow'))
+                print(colored(f"Within {num_frames} timesteps: " + ("SUCCESSFUL" if successful else "FAILED"), ("green" if successful else "red")))
 
-                print(f"Action loss for trajectory of {len(demo_obs)} timesteps: {action_loss}")
-                print(f"Joint loss for trajectory of {len(demo_obs)} timesteps: {joint_loss}")
-                print(f"Within {num_frames} timesteps: " + ("SUCCESSFUL" if success == 1 else "FAILED"))
-
-        # gif generation
-        target_images = [ep["rgb_static"] for ep in demo_obs]
-        predicted_images = [obs["rgb_obs"]["rgb_static"] for obs, info in predicted_env_states]
-        save_gif(
-            target_images,
-            file_name=f"model2-{train_or_val}-({task_name})-({episode_range[0]}-{episode_range[1]})-target.gif",
-        )
-        save_gif(
-            predicted_images,
-            file_name=f"model2-{train_or_val}-({task_name})-({episode_range[0]}-{episode_range[1]})-prediction.gif",
-        )
+                # gif generation
+                target_images = [ep["rgb_static"] for ep in demo_obs]
+                predicted_images = [obs["rgb_obs"]["rgb_static"] for obs, info in predicted_env_states]
+                save_gif(
+                    target_images,
+                    file_name=f"model2-eval-gifs/model2-{train_or_val}-({task_name})-({episode_range[0]}-{episode_range[1]})-target.gif",
+                )
+                save_gif(
+                    predicted_images[:success + 5],
+                    file_name=f"model2-eval-gifs/model2-{train_or_val}-({task_name})-({episode_range[0]}-{episode_range[1]})-prediction.gif",
+                )
 
         # ep = np.load(get_episode_path(episode_range[0], data_path))
 
