@@ -9,14 +9,13 @@ for module_path in module_paths:
     if module_path not in sys.path:
         sys.path.append(module_path)
 
+import csv
 import numpy as np
 from model2 import Model2
 import hydra
 from torch import nn
 import torch
-import cv2
-from model2_training import collect_frames, get_task_timeframes
-from hobbes_utils import preprocess_image, get_episode_path, save_gif
+from hobbes_utils import *
 from typing import List
 
 
@@ -24,201 +23,171 @@ from typing import List
 HOBBES_DATASET_ROOT_PATH = "/home/grail/willaria_research/hobbes/dataset/"
 
 
-def initialize_env(robot_obs, scene_obs):
-    with hydra.initialize(config_path="../../../calvin_env/conf/"):
-        env_config = hydra.compose(config_name="config_data_collection.yaml", overrides=["cameras=static_and_gripper"])
-        # env_config["scene"] = "calvin_scene_B"
-        # env_config.env["use_egl"] = False
-        # env_config.env["show_gui"] = False
-        env_config.env["use_vr"] = False
-        # env_config.env["use_scene_info"] = True
-        env = hydra.utils.instantiate(env_config.env)
-    env.reset(robot_obs, scene_obs)
-    return env
-    
-def generate_trajectory(env, model, num_frames=20):
-    """Simulates the trajectory predicted by the model in the environment.
+# def initialize_env(robot_obs, scene_obs):
+#     with hydra.initialize(config_path="../../../calvin_env/conf/"):
+#         env_config = hydra.compose(config_name="config_data_collection.yaml", overrides=["cameras=static_and_gripper"])
+#         # env_config["scene"] = "calvin_scene_B"
+#         # env_config.env["use_egl"] = False
+#         # env_config.env["show_gui"] = False
+#         env_config.env["use_vr"] = False
+#         # env_config.env["use_scene_info"] = True
+#         env = hydra.utils.instantiate(env_config.env)
+#     env.reset(robot_obs, scene_obs)
+#     return env
+
+
+# def generate_trajectory(env, model, num_frames=20):
+#     """Simulates the trajectory predicted by the model in the environment.
+
+#     Args:
+#         model (_type_): Trained model to predict actions at each timestep.
+#         env_config (_type_): Config for the environment
+#         num_frames (int, optional): Number of steps to predict. Defaults to 20.
+
+#     Returns:
+#         _type_: _description_
+#     """
+#     frames = []
+#     actions = []
+
+#     for i in range(num_frames):
+#         # Get current frame
+#         curr_frame = env.render(mode="rgb_array")
+
+#         obs = env.get_obs()
+#         # unsqueeze to emulate batch size of 1
+#         imgs = {
+#             "rgb_static": preprocess_image(obs["rgb_obs"]["rgb_static"]).unsqueeze(0),
+#             "rgb_gripper": preprocess_image(obs["rgb_obs"]["rgb_gripper"]).unsqueeze(0),
+#         }
+#         robot_obs = torch.tensor(obs["robot_obs"]).float().unsqueeze(0)
+#         # Generate action at current frame
+#         action = model(imgs, robot_obs)
+
+#         # Save to lists
+#         frames.append(curr_frame)
+#         actions.append(action)
+
+#         # Force gripper to binary -1 or 1
+#         action[0][6] = -1 if action[0][6] < 0 else 1
+
+#         action_dict = {"type": "cartesian_rel", "action": action.detach().squeeze(0)}
+#         # Step env
+#         observation, reward, done, info = env.step(action_dict)
+
+#         if i % 10 == 0:
+#             print("Processed frame", i)
+
+#     return frames, actions
+
+
+def model2_pred_action(model, obs):
+    """Extract relevant information from environment observation and feed to model, return model output.
 
     Args:
-        model (_type_): Trained model to predict actions at each timestep.
-        env_config (_type_): Config for the environment
-        num_frames (int, optional): Number of steps to predict. Defaults to 20.
-
-    Returns:
-        _type_: _description_
+        obs (_type_): _description_
     """
-    frames = []
-    actions = []
-    
-    for i in range(num_frames):
-        # Get current frame
-        curr_frame = env.render(mode="rgb_array")
-
-       
-        obs = env.get_obs()
-        # unsqueeze to emulate batch size of 1
-        imgs = {
-            'rgb_static': preprocess_image(obs["rgb_obs"]["rgb_static"]).unsqueeze(0),
-            'rgb_gripper': preprocess_image(obs["rgb_obs"]["rgb_gripper"]).unsqueeze(0)
-        }
-        robot_obs = torch.tensor(obs['robot_obs']).float().unsqueeze(0)
-        # Generate action at current frame
-        action = model(imgs, robot_obs)
-        
-        # Save to lists
-        frames.append(curr_frame)
-        actions.append(action)
-
-        # Force gripper to binary -1 or 1
-        action[0][6] = -1 if action[0][6] < 0 else 1
-
-        action_dict = {"type":"cartesian_rel", "action":action.detach().squeeze(0)}
-        # Step env
-        observation, reward, done, info = env.step(action_dict)
-        
-        if i % 10 == 0:
-            print("Processed frame", i)
-    
-    return frames, actions
+    # unsqueeze to emulate batch size of 1
+    imgs = {
+        "rgb_static": preprocess_image(obs["rgb_obs"]["rgb_static"]).unsqueeze(0),
+        "rgb_gripper": preprocess_image(obs["rgb_obs"]["rgb_gripper"]).unsqueeze(0),
+    }
+    robot_obs = torch.tensor(obs["robot_obs"]).float().unsqueeze(0)
+    return model(imgs, robot_obs)
 
 
-def generate_trajectory_full_observations(env, model, num_frames=20):
-    """Simulates the trajectory predicted by the model in the environment.
-
-    Args:
-        model (_type_): Trained model to predict actions at each timestep.
-        env_config (_type_): Config for the environment
-        num_frames (int, optional): Number of steps to predict. Defaults to 20.
-
-    Returns:
-        _type_: _description_
-    """
-    environment_states = []
-    predicted_actions = []
-    
-    for i in range(num_frames):
-        # Get current frame
-        curr_frame = env.render(mode="rgb_array")
-
-       
-        obs = env.get_obs()
-        # unsqueeze to emulate batch size of 1
-        imgs = {
-            'rgb_static': preprocess_image(obs["rgb_obs"]["rgb_static"]).unsqueeze(0),
-            'rgb_gripper': preprocess_image(obs["rgb_obs"]["rgb_gripper"]).unsqueeze(0)
-        }
-        robot_obs = torch.tensor(obs['robot_obs']).float().unsqueeze(0)
-        # Generate action at current frame
-        action = model(imgs, robot_obs)
-        
-        # Save to lists
-        environment_states.append(obs)
-        predicted_actions.append(action)
-
-        # Force gripper to binary -1 or 1
-        action[0][6] = -1 if action[0][6] < 0 else 1
-
-        action_dict = {"type":"cartesian_rel", "action":action.detach().squeeze(0)}
-        # Step env
-        observation, reward, done, info = env.step(action_dict)
-        
-        if i % 10 == 0:
-            print("Processed frame", i)
-    
-    return environment_states, predicted_actions
-
-
-def display_frames(frames, title="", ms_per_frame=50):
-    """Press any key to start video, once finished press a key to close. DO NOT HIT RED X!
-
-    Args:
-        frames (_type_): _description_
-        title (str, optional): _description_. Defaults to "".
-        ms_per_frame (int, optional): _description_. Defaults to 50.
-    """
-    for i in range(len(frames)):
-        if i == 1:
-            _ = cv2.waitKey(0)
-        cv2.imshow(title, frames[i][:, :, ::-1])
-
-        key = cv2.waitKey(ms_per_frame)  # pauses for 50ms before fetching next image
-        if key == 27:  # if ESC is pressed, exit loop
-            cv2.destroyAllWindows()
-            break
-    cv2.waitKey(0)
-    cv2.destroyAllWindows()
-    
-def model_evaluation_trajectory_loss(model: Model2, demonstration: List) -> float:
-    """_summary_
-
-    Args:
-        model (Model2): _description_
-        demonstration (List): List of episodes in order in the demonstration.
-
-    Returns:
-        float: _description_
-    """
-    
-    
-    first_episode = demonstration[0]
-    init_environment = initialize_env(first_episode["robot_obs"], first_episode["scene_obs"])
-    
-    frames, actions = generate_trajectory_full_observations(init_environment, model, len(demonstration))
-
-    
-
-    
 def main():
-    dataset_name = 'task_D_D'
+    dataset_name = "task_D_D"
     task_name = "stack_block"
 
+    train_data_path = HOBBES_DATASET_ROOT_PATH + dataset_name + "/training/"
+    val_data_path = HOBBES_DATASET_ROOT_PATH + dataset_name + "/validation/"
 
-    train_data_path = HOBBES_DATASET_ROOT_PATH + dataset_name + '/training/'
-    val_data_path = HOBBES_DATASET_ROOT_PATH + dataset_name + '/validation/'
+    spamwriter = csv.writer(csvfile, delimiter=" ", quotechar="|", quoting=csv.QUOTE_MINIMAL)
+    spamwriter.writerow(["Spam"] * 5 + ["Baked Beans"])
+    spamwriter.writerow(["Spam", "Lovely Spam", "Wonderful Spam"])
 
-    for train_or_val in ('train', 'val'):
-        if train_or_val == 'train':
-            data_path = train_data_path 
-            #continue
-        elif train_or_val == 'val':
+    for train_or_val in ("train", "val"):
+        if train_or_val == "train":
+            data_path = train_data_path
+            # continue
+        elif train_or_val == "val":
             data_path = val_data_path
-        print('using dataset', data_path)
+        print("using dataset", data_path)
 
-        # set up the start frame for the episode
-        episode_ranges = get_task_timeframes(task_name, 
-                                            data_path,
-                                            1000)
+        with open(f"model2_eval-{data_path}-{task_name}.csv", "w", newline="") as csvfile:
+            csv_writer = csv.writer(csvfile, delimiter=" ", quotechar="|", quoting=csv.QUOTE_MINIMAL)
 
-        for episode_range in episode_ranges:
-            print(f"Using episode in the range(s): {episode_range} for task {task_name} in {train_or_val} dataset {dataset_name}")
+            # set up the start frame for the episode
+            episode_ranges = get_task_timeframes(task_name, data_path, 1000)
 
-            ep = np.load(
-                get_episode_path(episode_range[0], data_path)
-            )
+            for episode_range in episode_ranges:
+                print(
+                    f"Using episode in the range(s): {episode_range} for task {task_name} in {train_or_val} dataset {dataset_name}"
+                )
 
-            data = collect_frames(episode_range[0], episode_range[1], data_path)
-            target_actions = [y for x, y in data]
+                # load model
+                model = Model2.load_from_checkpoint(
+                    "../checkpoints/v2/task_D_D/" + task_name + "/latest-epoch=999.ckpt"
+                )
 
-            # initialize env
-            env = initialize_env(ep["robot_obs"], ep["scene_obs"])
+                # Generate enough trajectory for whichever of our eval metrics needs the most
+                num_frames = max(400, episode_range[1] - episode_range[0])
 
-            # load model
-            model = Model2.load_from_checkpoint(
-                "../checkpoints/v2/task_D_D/" + task_name + "/latest-epoch=999.ckpt"
-            )
+                demo_obs, demo_actions, predicted_env_states, predicted_actions = all_trajectory_info(
+                    lambda obs: model2_pred_action(model, obs), episode_range, compute_action_loss, num_frames
+                )
 
-            # generate sample trajectory
-            desired_num_frames = len(target_actions)
-            frames, actions = generate_trajectory(env, model, desired_num_frames)
+                action_loss = compute_action_loss(demo_actions, predicted_actions[: len(demo_actions)])
+                joint_loss = compute_joint_loss(demo_obs, predicted_env_states[: len(demo_obs)])
+                success = task_success(predicted_env_states, task_name)
 
-            save_gif(frames, file_name=f"model2-{train_or_val}-({task_name})-({episode_range[0]}-{episode_range[1]}).gif")
+                csv_writer.write_row(
+                    [
+                        dataset_name,
+                        task_name,
+                        data_path,
+                        episode_range[0],
+                        episode_range[1],
+                        action_loss,
+                        joint_loss,
+                        success,
+                    ]
+                )
 
-            loss = nn.MSELoss(reduction='mean')
+                print(f"Action loss for trajectory of {len(demo_obs)} timesteps: {action_loss}")
+                print(f"Joint loss for trajectory of {len(demo_obs)} timesteps: {joint_loss}")
+                print(f"Within {num_frames} timesteps: " + ("SUCCESSFUL" if success == 1 else "FAILED"))
 
-            target_actions = torch.stack(target_actions[:desired_num_frames])
-            actions = torch.stack(actions).squeeze(1)
+        # gif generation
+        target_images = [ep["rgb_static"] for ep in demo_obs]
+        predicted_images = [obs["rgb_obs"]["rgb_static"] for obs, info in predicted_env_states]
+        save_gif(
+            target_images,
+            file_name=f"model2-{train_or_val}-({task_name})-({episode_range[0]}-{episode_range[1]})-target.gif",
+        )
+        save_gif(
+            predicted_images,
+            file_name=f"model2-{train_or_val}-({task_name})-({episode_range[0]}-{episode_range[1]})-prediction.gif",
+        )
 
-            print(f"Eval loss for trajectory of {len(frames)} timesteps: {loss(input=actions, target=target_actions)}")
+        # ep = np.load(get_episode_path(episode_range[0], data_path))
+
+        # data = collect_frames(episode_range[0], episode_range[1], data_path)
+        # target_actions = [y for x, y in data]
+
+        # # initialize env
+        # env = initialize_env(ep["robot_obs"], ep["scene_obs"])
+
+        # # generate sample trajectory
+        # desired_num_frames = len(target_actions)
+        # frames, actions = generate_trajectory(env, model, desired_num_frames)
+
+        # loss = nn.MSELoss(reduction="mean")
+
+        # target_actions = torch.stack(target_actions[:desired_num_frames])
+        # actions = torch.stack(actions).squeeze(1)
+
 
 if __name__ == "__main__":
     main()
