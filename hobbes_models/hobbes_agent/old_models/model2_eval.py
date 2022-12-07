@@ -156,7 +156,7 @@ def main():
                 print(colored(f"Joint loss for trajectory of {len(demo_obs)} timesteps: {joint_loss}", 'yellow'))
                 print(colored(f"Within {num_frames} timesteps: " + ("SUCCESSFUL" if successful else "FAILED"), ("green" if successful else "red")))
 
-                # gif generation
+                # gif generation for targets and predicted
                 target_images = [ep["rgb_static"] for ep in demo_obs]
                 predicted_images = [obs["rgb_obs"]["rgb_static"] for obs, info in predicted_env_states]
                 save_gif(
