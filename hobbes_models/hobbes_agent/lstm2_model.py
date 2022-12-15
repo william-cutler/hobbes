@@ -21,14 +21,14 @@ from calvin_agent.models.perceptual_encoders.vision_network import VisionNetwork
 
 class HobbesActionDecoderLSTM(pl.LightningModule):
     def __init__(
-        self, input_dim=256, hidden_dim=256, output_dim=7+1, dropout=0.1,
+        self, input_dim=256, hidden_dim=256, output_dim=7, num_layers=1, dropout=0.1,
     ):
         super().__init__()
 
         self.lstm_decoder = nn.LSTM(input_size=input_dim,
                                     hidden_size=hidden_dim,
                                     proj_size=output_dim,
-                                    num_layers=1,
+                                    num_layers=num_layers,
                                     batch_first=True)
 
         self.dropout = nn.Dropout(p=dropout)
@@ -52,11 +52,11 @@ class HobbesActionDecoderLSTM(pl.LightningModule):
         # h_0 = torch.randn(2, 3, 20)
         # c_0 = torch.randn(2, 3, 20)
 
-        packed_input_embeddings = nn.utils.rnn.pack_padded_sequence(input_embeddings, num_embeddings, batch_first=True)
+        packed_input_embeddings = nn.utils.rnn.pack_padded_sequence(input_embeddings, num_embeddings.cpu(), batch_first=True)
 
         packed_output, (h_n, c_n) = self.lstm_decoder(packed_input_embeddings) #, (h_0, c_0))
 
-        output = nn.utils.rnn.pad_packed_sequence(packed_output, num_embeddings, batch_first=True)
+        output, lengths = nn.utils.rnn.pad_packed_sequence(packed_output, batch_first=True)
 
         # output: (N, L, output_dim)
         # h_n: final hidden state
@@ -91,9 +91,12 @@ class HobbesDecoderWrapper(pl.LightningModule):
     ):
         super().__init__()
 
+        self.static_camera_embed_dim = static_camera_embed_dim
+        self.gripper_camera_embed_dim = gripper_camera_embed_dim
+
         self.static_camera_encoder = VisionNetwork(200, 200, 'LeakyReLU', 0.0, True, static_camera_embed_dim, 3)
 
-        self.gripper_camera_encoder = VisionNetwork(84, 84, 'LeakyReLU', 0.0, True, static_camera_embed_dim, 3)
+        self.gripper_camera_encoder = VisionNetwork(84, 84, 'LeakyReLU', 0.0, True, gripper_camera_embed_dim, 3)
 
         self.robot_obs_encoder = nn.Identity()
 
@@ -107,22 +110,37 @@ class HobbesDecoderWrapper(pl.LightningModule):
             nn.Linear(128, 256),
         )
 
-        self.action_lstm = HobbesActionDecoderLSTM(input_size=static_camera_embed_dim + gripper_camera_embed_dim + robot_obs_dim,
-                                                   hidden_size=hidden_dim,
+        self.action_lstm = HobbesActionDecoderLSTM(input_dim=hidden_dim,
+                                                   hidden_dim=hidden_dim,
                                                    num_layers=1,
-                                                   batch_first=True)
+                                                   dropout=dropout)
 
-    def forward(self, static_camera_obs, gripper_camera_obs, robot_obs):
+    def forward(self, static_camera_obs, gripper_camera_obs, robot_obs, num_observations):
+        # get batch size and sequence length for all observations
+        batch_size = static_camera_obs.shape[0]
+        seq_length = static_camera_obs.shape[1]
+        
+        # reshape batches and sequence lengths to batches only for 2dconv
+        static_camera_obs_batch = static_camera_obs.view(batch_size * seq_length, 3, 200, 200)
+        gripper_camera_obs_batch = gripper_camera_obs.view(batch_size * seq_length, 3, 84, 84)
+        
+        # create image embedding representations
+        static_camera_embeddings = self.static_camera_encoder(static_camera_obs_batch)
+        gripper_camera_embeddings = self.gripper_camera_encoder(gripper_camera_obs_batch)
+        
+        # reshape back to original shape
+        static_camera_embeddings = static_camera_embeddings.view(batch_size, seq_length, self.static_camera_embed_dim)
+        gripper_camera_embeddings = gripper_camera_embeddings.view(batch_size, seq_length, self.gripper_camera_embed_dim)
 
-        static_camera_embeddings = self.static_camera_encoder(static_camera_obs)
-        gripper_camera_embeddings = self.gripper_camera_encoder(gripper_camera_obs)
         robot_embeddings = self.robot_obs_encoder(robot_obs)
+        
         all_embeddings = torch.cat([static_camera_embeddings, gripper_camera_embeddings, robot_embeddings], dim=-1)
 
         input_embeddings = self.ff(all_embeddings)
 
-        self.action_lstm(input_embeddings, 0)
-
+        output = self.action_lstm(input_embeddings, num_observations)
+        
+        return output
         
 
     def training_step(self, train_batch, train_batch_lengths):
@@ -147,9 +165,27 @@ class HobbesDecoderWrapper(pl.LightningModule):
         static_obs = observations.get('rgb_static')
         gripper_obs = observations.get('rgb_gripper')
         robot_obs = observations.get('robot_obs')
-
+        
         y_hat = self(static_obs, gripper_obs, robot_obs, num_observations)
+
         loss = F.cross_entropy(y_hat, y)
+        self.log('train_loss', loss)
+        return loss
+    
+    def validation_step(self, val_batch, train_batch_lengths):
+        x, y = val_batch
+        
+        observations = x.get('state_observations')
+        num_observations = x.get('state_observations_num')
+
+        static_obs = observations.get('rgb_static')
+        gripper_obs = observations.get('rgb_gripper')
+        robot_obs = observations.get('robot_obs')
+        
+        y_hat = self(static_obs, gripper_obs, robot_obs, num_observations)
+
+        loss = F.cross_entropy(y_hat, y)
+        self.log('val_loss', loss)
         return loss
 
     def configure_optimizers(self):

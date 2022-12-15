@@ -10,8 +10,8 @@ from hobbes_utils import *
 from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning import loggers as pl_loggers
 import pytorch_lightning as pl
-from lstm_model import HobbesLSTM
-from lstm_dataset import LSTMDataset
+from lstm2_model import HobbesDecoderWrapper
+from lstm2_dataset import LSTMDataset
 from torch.utils.data import Dataset, DataLoader
 import torch
 import numpy as np
@@ -25,7 +25,7 @@ HOBBES_DATASET_ROOT_PATH = "/home/grail/willaria_research/hobbes/dataset/"
 def train_model(
     task_name: str = "turn_on_led",
     dataset_path: str = "calvin_debug_dataset",
-    model: HobbesLSTM = None,
+    model: HobbesDecoderWrapper = None,
     model_save_path: str = "checkpoints/model_params",
     num_demonstrations: int = 1,
     val: bool = False,
@@ -34,7 +34,7 @@ def train_model(
     num_gpus=0,
     max_epochs=1000,
     val_epochs=10
-) -> HobbesLSTM:
+) -> HobbesDecoderWrapper:
     """Train a model on a single task.
 
     Args:
@@ -50,7 +50,7 @@ def train_model(
     """
 
     if not model:
-        model = HobbesLSTM()
+        model = HobbesDecoderWrapper()
 
     train_data_path = HOBBES_DATASET_ROOT_PATH + dataset_path + "/training/"
 
@@ -67,7 +67,7 @@ def train_model(
         dirpath=model_save_path, save_top_k=2, monitor="epoch", mode="max", filename="latest-{epoch:02d}"
     )
 
-    tb_logger = pl_loggers.TensorBoardLogger(save_dir="logs/lstm/")
+    tb_logger = pl_loggers.TensorBoardLogger(save_dir="logs/lstm/debug")
 
     trainer = pl.Trainer(
         gpus=num_gpus,
@@ -98,8 +98,6 @@ def build_val_dataloader(task_name: str, dataset_path: str, batch_size: int = 16
     """
     val_data_path = HOBBES_DATASET_ROOT_PATH + dataset_path + "/validation/"
 
-    val_data_path = HOBBES_DATASET_ROOT_PATH + dataset_path + "/training/"
-
     val_dataset = LSTMDataset(task_name, val_data_path, num_demonstrations)
 
     print("val dataset len", len(val_dataset))
@@ -114,9 +112,9 @@ def main():
     # train model
     train_model(
         task_name="turn_off_lightbulb",
-        dataset_path="calvin_debug_dataset",
+        dataset_path="task_D_D",
         model=model,
-        model_save_path="checkpoints/lstm/calvin_debug_dataset/turn_off_lightbulb",
+        model_save_path="checkpoints/lstm2/task_D_D/turn_off_lightbulb",
         num_demonstrations=1000,
         val=True,
         batch_size=16,

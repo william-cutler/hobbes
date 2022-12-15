@@ -69,6 +69,16 @@ def static_image_extractor(ep):
     return preprocess_image(ep["rgb_static"])
 
 
+def rgb_and_proprio_extractor(ep):
+    imgs = {
+        'rgb_static': preprocess_image(ep["rgb_static"]),
+        'rgb_gripper': preprocess_image(ep["rgb_gripper"])
+    }
+    robot_obs = torch.tensor(ep['robot_obs']).float()
+    
+    return (imgs, robot_obs)
+
+
 def get_task_timeframes(target_task_name: str, dataset_path: str, num_demonstrations: int) -> list:
     """Returns the start and end of every episode corresponding to the specified task up to given number of demonstrations.
 

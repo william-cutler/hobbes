@@ -22,18 +22,23 @@ class LSTMDataset(Dataset):
         train_timeframes = get_task_timeframes(
             target_task_name=task_name, dataset_path=dataset_path, num_demonstrations=num_observations)
 
-        self.len = len(train_timeframes)
 
         observations = []
         target_actions = []
         for timeframe in train_timeframes:
             demonstration, actions = collect_frames(
                 timeframe[0], timeframe[1], dataset_path, observation_extractor=multi_extractor, action_type="rel_actions")
-            observations.append(demonstration)
-            target_actions.append(torch.stack(actions))
+            
+            # set constant length for demonstrations
+            if len(demonstration) == 64:
+                observations.append(demonstration)
+
+                target_actions.append(torch.stack(actions))
 
         self.observations = observations
         self.actions = target_actions
+        self.len = len(observations)
+
 
     def __len__(self):
         return self.len
@@ -42,13 +47,29 @@ class LSTMDataset(Dataset):
         if torch.is_tensor(idx):
             idx = idx.tolist()
 
-        demo = self.observations[idx]
-        actions = self.observations[idx]
+        observations = self.observations[idx]
+        # print('length of sequence at idx', idx, 'is', len(observations), 'number of items is', self.len)
+        
+        rgb_static = []
+        rgb_gripper = []
+        robot_obs = []
+        for observation in observations:
+            rgb_static.append(observation.get('rgb_static'))
+            rgb_gripper.append(observation.get('rgb_gripper'))
+            robot_obs.append(observation.get('robot_obs'))
+
+        actions = self.actions[idx]
         
         # print(demo_idx, idx)
         
+        demo = {
+            'rgb_static': torch.stack(rgb_static),
+            'rgb_gripper': torch.stack(rgb_gripper),
+            'robot_obs': torch.stack(robot_obs)
+        }
+        
         item = {'state_observations': demo,
-                'state_observations_num': len(demo),
+                'state_observations_num': len(rgb_static),
         }
 
         """ demo is a dictionary: 
