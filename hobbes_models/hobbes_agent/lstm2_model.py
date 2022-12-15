@@ -19,9 +19,233 @@ from calvin_agent.models.perceptual_encoders.vision_network import VisionNetwork
 # https://fairseq.readthedocs.io/en/latest/tutorial_simple_lstm.html
 
 
-class HobbesLSTM2(pl.LightningModule):
+class HobbesActionDecoderLSTM(pl.LightningModule):
     def __init__(
-        self, static_img_embed_dim=64, gripper_img_embed_dim=32, encoder_hidden_dim=64, decoder_hidden_dim=64, dropout=0.1,
+        self, input_dim=256, hidden_dim=256, output_dim=7+1, dropout=0.1,
+    ):
+        super().__init__()
+
+        self.lstm_decoder = nn.LSTM(input_size=input_dim,
+                                    hidden_size=hidden_dim,
+                                    proj_size=output_dim,
+                                    num_layers=1,
+                                    batch_first=True)
+
+        self.dropout = nn.Dropout(p=dropout)
+
+        # normalize output to range (-1,1)
+        self.normalize = nn.Tanh()
+
+    def forward(self, input_embeddings, num_embeddings):
+        """_summary_
+
+        Args:
+            input_embeddings Tensor(N, L, input_dim): padded input embeddings for all frames
+            num_embeddings (number): number of frames passed in for each batch
+        """
+
+        # input_embeddings: (N, L, input_dim)
+
+        input_embeddings = self.dropout(input_embeddings)
+
+        # initial hidden state and cell state to use
+        # h_0 = torch.randn(2, 3, 20)
+        # c_0 = torch.randn(2, 3, 20)
+
+        packed_input_embeddings = nn.utils.rnn.pack_padded_sequence(input_embeddings, num_embeddings, batch_first=True)
+
+        packed_output, (h_n, c_n) = self.lstm_decoder(packed_input_embeddings) #, (h_0, c_0))
+
+        output = nn.utils.rnn.pad_packed_sequence(packed_output, num_embeddings, batch_first=True)
+
+        # output: (N, L, output_dim)
+        # h_n: final hidden state
+        # c_n: final cell state
+
+        output = self.normalize(output)
+
+        return output
+    
+    def training_step(self, train_batch, train_batch_lengths):
+        """_summary_
+
+        Args:
+                train_batch (tuple): ( (N, L, input_dim), (N, L, output_dim) )
+                train_batch_lengths (list(int)): L for each batch
+
+        Returns:
+                torch.Tensor: _description_
+        """
+        x, y = train_batch
+        y_hat = self(x, train_batch_lengths)
+        loss = F.cross_entropy(y_hat, y)
+        return loss
+
+    def configure_optimizers(self):
+        return torch.optim.Adam(self.parameters(), lr=0.02)
+
+
+class HobbesDecoderWrapper(pl.LightningModule):
+    def __init__(
+        self, static_camera_embed_dim=64, gripper_camera_embed_dim=32, robot_obs_dim=15, hidden_dim=256, dropout=0.1,
+    ):
+        super().__init__()
+
+        self.static_camera_encoder = VisionNetwork(200, 200, 'LeakyReLU', 0.0, True, static_camera_embed_dim, 3)
+
+        self.gripper_camera_encoder = VisionNetwork(84, 84, 'LeakyReLU', 0.0, True, static_camera_embed_dim, 3)
+
+        self.robot_obs_encoder = nn.Identity()
+
+        self.ff = nn.Sequential(
+            nn.Linear(static_camera_embed_dim+gripper_camera_embed_dim+robot_obs_dim, 128),
+            nn.LeakyReLU(),
+            nn.Linear(128, 128),
+            nn.LeakyReLU(),
+            nn.Linear(128, 128),
+            nn.LeakyReLU(),
+            nn.Linear(128, 256),
+        )
+
+        self.action_lstm = HobbesActionDecoderLSTM(input_size=static_camera_embed_dim + gripper_camera_embed_dim + robot_obs_dim,
+                                                   hidden_size=hidden_dim,
+                                                   num_layers=1,
+                                                   batch_first=True)
+
+    def forward(self, static_camera_obs, gripper_camera_obs, robot_obs):
+
+        static_camera_embeddings = self.static_camera_encoder(static_camera_obs)
+        gripper_camera_embeddings = self.gripper_camera_encoder(gripper_camera_obs)
+        robot_embeddings = self.robot_obs_encoder(robot_obs)
+        all_embeddings = torch.cat([static_camera_embeddings, gripper_camera_embeddings, robot_embeddings], dim=-1)
+
+        input_embeddings = self.ff(all_embeddings)
+
+        self.action_lstm(input_embeddings, 0)
+
+        
+
+    def training_step(self, train_batch, train_batch_lengths):
+        """_summary_
+
+        Args:
+                train_batch (tuple): ( (N, L, input_dim), (N, L, output_dim) )
+                train_batch_lengths (list(int)): L for each batch
+
+        Returns:
+                torch.Tensor: _description_
+
+        train_batch (tuple): (state, target_actions)
+
+        state (dict): {'rgb_static': list(images), 'rgb_gripper': list(images), 'robot_obs': list(robot_obs)}
+        """
+        x, y = train_batch
+        
+        observations = x.get('state_observations')
+        num_observations = x.get('state_observations_num')
+
+        static_obs = observations.get('rgb_static')
+        gripper_obs = observations.get('rgb_gripper')
+        robot_obs = observations.get('robot_obs')
+
+        y_hat = self(static_obs, gripper_obs, robot_obs, num_observations)
+        loss = F.cross_entropy(y_hat, y)
+        return loss
+
+    def configure_optimizers(self):
+        return torch.optim.Adam(self.parameters(), lr=0.02)
+#################### 
+        
+
+# Encodes static camera, gripper camera, and robot proprioceptive information into a single vector
+class HobbesStateEncoderLSTM(pl.LightningModule):
+    def __init__(
+        self, static_camera_embed_dim=64, gripper_camera_embed_dim=32, robot_obs_dim=15, hidden_dim=256, dropout=0.1,
+    ):
+        super().__init__()
+
+        self.static_camera_encoder = VisionNetwork(200, 200, 'LeakyReLU', 0.0, True, static_camera_embed_dim, 3)
+
+        self.gripper_camera_encoder = VisionNetwork(84, 84, 'LeakyReLU', 0.0, True, static_camera_embed_dim, 3)
+
+        self.lstm_encoder = nn.LSTM(input_size=static_camera_embed_dim+gripper_camera_embed_dim+robot_obs_dim,
+                                    hidden_size=hidden_dim,
+                                    num_layers=1,
+                                    batch_first=True)
+
+        self.dropout = nn.Dropout(p=dropout)
+
+    def forward(self, input_embeddings, num_embeddings):
+        """_summary_
+
+        Args:
+            input_embeddings Tensor(N, L, input_dim): padded input embeddings for all frames
+            num_embeddings (number): number of frames passed in for each batch
+        """
+
+        # input_embeddings: (N, L, input_dim)
+
+        input_embeddings = self.dropout(input_embeddings)
+
+        # initial hidden state and cell state to use
+        # h_0 = torch.randn(2, 3, 20)
+        # c_0 = torch.randn(2, 3, 20)
+
+        packed_input_embeddings = nn.utils.rnn.pack_padded_sequence(input_embeddings, num_embeddings, batch_first=True)
+
+        packed_output, (h_n, c_n) = self.lstm_decoder(packed_input_embeddings) #, (h_0, c_0))
+
+        output = nn.utils.rnn.pad_packed_sequence(packed_output, num_embeddings, batch_first=True)
+
+        # output: (N, L, output_dim)
+        # h_n: final hidden state
+        # c_n: final cell state
+
+        output = self.normalize(output)
+
+        return output
+    
+    def training_step(self, train_batch, train_batch_lengths):
+        """_summary_
+
+        Args:
+                train_batch (tuple): ( (N, L, input_dim), (N, L, output_dim) )
+                train_batch_lengths (list(int)): L for each batch
+
+        Returns:
+                torch.Tensor: _description_
+        """
+        x, y = train_batch
+        y_hat = self(x, train_batch_lengths)
+        loss = F.cross_entropy(y_hat, y)
+        return loss
+
+    def configure_optimizers(self):
+        return torch.optim.Adam(self.parameters(), lr=0.02)
+        
+
+
+
+
+
+
+
+
+
+
+
+
+
+#############################################################################################################################
+### BELOW THIS LINE IS OUTDATED
+
+
+
+
+
+class HobbesEncoderLSTM(pl.LightningModule):
+    def __init__(
+        self, static_img_embed_dim=64, gripper_img_embed_dim=32, encoder_hidden_dim=64, dropout=0.1,
     ):
         super().__init__()
 
@@ -29,6 +253,8 @@ class HobbesLSTM2(pl.LightningModule):
         self.static_img_encoder = VisionNetwork(200, 200, 'LeakyReLU', 0.0, True, static_img_embed_dim, 3)
 
         self.gripper_img_encoder = VisionNetwork(84, 84, 'LeakyReLU', 0.0, True, gripper_img_embed_dim, 3)
+
+        self.proprio_encoder = nn.Identity()
 
         self.dropout = nn.Dropout(p=dropout)
 
@@ -39,38 +265,30 @@ class HobbesLSTM2(pl.LightningModule):
                                     num_layers=1,
                                     batch_first=True)
 
-        # (batch, img_embed_dim(96) + encoder_hidden_dim(64)) -> (batch, decoder_hidden_dim(64))
-        self.lstm_decoder = nn.LSTM(input_size=static_img_embed_dim + gripper_img_embed_dim + encoder_hidden_dim + 15,
-                                    hidden_size=decoder_hidden_dim,
-                                    num_layers=1,
-                                    batch_first=True)
-
-        # Define the output projection to our action space (batch, hidden_dim(64)) -> (batch, action_space(7))
-        self.output_projection = nn.Linear(decoder_hidden_dim, 7)
-
-        # Normalize to range (-1, 1) for actions
-        self.normalize = nn.Tanh()
-
     # Assuming we are given a sequence of demonstration images, and one single image from runtime
-    def forward(self, demonstration_observations, demonstration_observation_num, runtime_observation):
+    def forward(self, demonstration_states, num_demonstration_states):
         ######################################## ENCODER ########################################
         # Encode demonstration input images (batch, img_embed_dim(64))
         # Confound sequence and batch for Conv2D https://discuss.pytorch.org/t/processing-sequence-of-images-with-conv2d/37494
 
         """ TODO: make this work probably.... all the data is laid out already
-
-            observation: {
+            
+            demonstration_states: {
                 'rgb_static': [Tensor(3,200,200), ...],
                 'rgb_gripper': [Tensor(3,84,84), ...],
                 'robot_obs': [Tensor(15), ...]
             }
 
-            'demonstration_observations': [{observation}, ...],
-            'demonstration_observation_num': number,
-            'runtime_observation': observation
+            number of demonstrations
+            num_demonstration_states: number
+            
         """
-        batch_size = ...
-        seq_length = ...
+        
+        static_images = demonstration_states['rgb_static']
+
+        batch_size = static_images.shape[0]
+        seq_length = static_images.shape[1]
+
         demonstration_images_batch = demonstration_images.view(batch_size * seq_length, 3, 200, 200)
 
         demonstration_images_batch = self.vision_encoder(demonstration_images_batch)

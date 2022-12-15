@@ -22,6 +22,8 @@ class LSTMDataset(Dataset):
         train_timeframes = get_task_timeframes(
             target_task_name=task_name, dataset_path=dataset_path, num_demonstrations=num_observations)
 
+        self.len = len(train_timeframes)
+
         observations = []
         target_actions = []
         for timeframe in train_timeframes:
@@ -32,13 +34,6 @@ class LSTMDataset(Dataset):
 
         self.observations = observations
         self.actions = target_actions
-        self.frame_to_demo_num_and_frame_num = {}
-        i = 0
-        for d in range(len(observations)):
-            for f in range(len(observations[d])):
-                self.frame_to_demo_num_and_frame_num[i] = (d, f)
-                i += 1
-        self.len = len(self.frame_to_demo_num_and_frame_num)
 
     def __len__(self):
         return self.len
@@ -47,14 +42,20 @@ class LSTMDataset(Dataset):
         if torch.is_tensor(idx):
             idx = idx.tolist()
 
-        demo_idx, frame_num = self.frame_to_demo_num_and_frame_num[idx]
-        demo = self.observations[demo_idx]
+        demo = self.observations[idx]
+        actions = self.observations[idx]
         
         # print(demo_idx, idx)
         
-        item = {'demonstration_images': demo,
-                'demonstration_images_num': len(demo),
-                'runtime_image': demo[frame_num],
+        item = {'state_observations': demo,
+                'state_observations_num': len(demo),
         }
 
-        return item, self.actions[demo_idx][frame_num]
+        """ demo is a dictionary: 
+        {
+            'rgb_static': list(images),
+            'rgb_gripper': list(images),
+            'robot_obs': list(robot_obs)
+        }
+        """
+        return item, actions
