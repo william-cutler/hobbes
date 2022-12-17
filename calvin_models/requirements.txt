@@ -25,3 +25,5 @@ moviepy
 tqdm
 termcolor
 wandb
+transformers
+termcolor

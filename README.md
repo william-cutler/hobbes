@@ -12,7 +12,10 @@ $ conda create -n hobbes_env python=3.8  # or use virtualenv
 $ conda activate hobbes_env
 $ sh install.sh
 ```
-If you encounter problems installing pyhash, you might have to downgrade setuptools to a version below 58.
+If problems are encountered installing the correct version of pytorch or pytorch with cuda, you may have to run the following command:
+```bash
+$ pip3 install torch==1.13.0+cu117 --extra-index-url https://download.pytorch.org/whl/cu117
+```
 
 Download dataset (choose which split you want to download with the argument `D`, `ABC` or `ABCD`): \
 For Hobbes, we use environment 'D'. If you want to get started without downloading the whole dataset, use the argument `debug` to download a small debug dataset (1.3 GB).
