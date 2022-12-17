@@ -40,7 +40,7 @@ def train_model(
     Args:
         task_name (str, optional): The name of the single task to train on. Defaults to 'turn_on_led'.
         dataset_path (str, optional): Path to the desired dataset relative to HOBBES_DATASET_ROOT_PATH. Defaults to 'calvin_debug_dataset'.
-        model_save_path (str, optional): Path to store model checkpoints in. Defaul\ts to 'checkpoints/model_params'.
+        model_save_path (str, optional): Path to store model checkpoints in. Defaults to 'checkpoints/model_params'.
         val (bool, optional): Whether to perform validation. Defaults to False.
         batch_size (int, optional): Training batch size. Defaults to 16.
         num_workers (int, optional): Number of workers for training dataloader. Defaults to 1.

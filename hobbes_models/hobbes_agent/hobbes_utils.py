@@ -8,6 +8,7 @@ import hydra
 from torch import nn
 from pathlib import Path
 from omegaconf import OmegaConf
+import os
 
 
 def get_episode_path(frame_num: int, dataset_path: str, pad_len: int = 7):
@@ -15,7 +16,7 @@ def get_episode_path(frame_num: int, dataset_path: str, pad_len: int = 7):
     return dataset_path + "episode_" + str(padded_num) + ".npz"
 
 
-def preprocess_image(img: np.ndarray) -> torch.Tensor:
+def preprocess_image(img: np.ndarray, scale=255) -> torch.Tensor:
     """Prepares a 200 x 200 x 3 RGB image for input into the model. Normalizes to [0, 1] and transposes to [3 x 200 x 200]
 
     Args:
@@ -24,7 +25,7 @@ def preprocess_image(img: np.ndarray) -> torch.Tensor:
     Returns:
         torch.Tensor: Transposed image ready to be fed into image encoder.
     """
-    return torch.from_numpy(np.transpose(img / 255, (2, 0, 1))).float()
+    return torch.from_numpy(np.transpose(img / scale, (2, 0, 1))).float()
 
 
 def save_gif(frames, file_name="sample.gif"):
@@ -62,7 +63,49 @@ def collect_frames(
         ep = np.load(get_episode_path(i, dataset_path))
         observations.append(observation_extractor(ep))
         actions.append(torch.tensor(ep[action_type]).float())  # 'actions' or 'rel_actions'
+        # print('collect frames start')
+
+        # print(observations)
+        # print('collect frames')
     return observations, actions
+
+
+def get_custom_extractor(
+    rgb_static=False,
+    depth_static=False,
+    rgb_gripper=False,
+    depth_gripper=False,
+    proprioceptive=False,
+    rgb_tactile=False,
+    depth_tactile=False
+):
+    def custom_extractor(ep):
+        static_img = []
+        if rgb_static:
+            static_img.append(preprocess_image(ep['rgb_static']))
+        if depth_static:
+            static_img.append(preprocess_image(np.expand_dims(ep['depth_static'], axis=2), scale=10))
+        static_img = torch.cat(static_img, dim=0) if len(static_img) > 0 else []
+        
+        gripper_img = []
+        if rgb_gripper:
+            gripper_img.append(preprocess_image(ep['rgb_gripper']))
+        if depth_gripper:
+            gripper_img.append(preprocess_image(np.expand_dims(ep['depth_gripper'], axis=2), scale=1))
+        gripper_img = torch.cat(gripper_img, dim=0) if len(gripper_img) > 0 else []
+        
+        robot_obs = []
+        if proprioceptive:
+            robot_obs = torch.tensor(ep['robot_obs']).float()
+
+        imgs = {
+            'static': static_img,
+            'gripper': gripper_img,
+            'proprioceptive': robot_obs
+        }
+        
+        return imgs
+    return custom_extractor
 
 
 def static_image_extractor(ep):
@@ -79,7 +122,7 @@ def rgb_and_proprio_extractor(ep):
     return (imgs, robot_obs)
 
 
-def get_task_timeframes(target_task_name: str, dataset_path: str, num_demonstrations: int) -> list:
+def get_task_timeframes(target_task_name: str, dataset_path: str, num_demonstrations: int, get_language=False) -> list:
     """Returns the start and end of every episode corresponding to the specified task up to given number of demonstrations.
 
     Args:
@@ -88,24 +131,39 @@ def get_task_timeframes(target_task_name: str, dataset_path: str, num_demonstrat
 
     Returns:
         list: List of pairs (episode_start_index, episode_end_index)
-    """
+    """    
     # Use built-in language annotations to determine start and stop of demonstration episode
     lang_npy = np.load(dataset_path + "lang_annotations/auto_lang_ann.npy", allow_pickle=True)
     lang = dict(enumerate(lang_npy.flatten(), 1))[1]
 
     target_task_indxs = []
+    target_task_anns = []
 
     task_names = lang["language"]["task"]
     task_frame_ranges = lang["info"]["indx"]
+    task_anns = lang["language"]["ann"]
 
     # Looking for the desired task, collecting frame ranges
-    for (task_name, task_range) in zip(task_names, task_frame_ranges):
-        if task_name == target_task_name:
-            target_task_indxs.append(task_range)
-        if len(target_task_indxs) == num_demonstrations:
-            break
-    if len(target_task_indxs) < num_demonstrations:
-        print(f"Warning: Requested {num_demonstrations} demonstrations but only found {len(target_task_indxs)}")
+    if get_language:
+        for (task_name, task_range, lang_ann) in zip(task_names, task_frame_ranges, task_anns):
+            if task_name == target_task_name:
+                target_task_indxs.append(task_range)
+                target_task_anns.append(lang_ann)
+            if len(target_task_indxs) == num_demonstrations:
+                break
+        if len(target_task_indxs) < num_demonstrations:
+            print(f"Warning: Requested {num_demonstrations} demonstrations but only found {len(target_task_indxs)}")
+        target_task_indxs = (target_task_indxs, target_task_anns)
+    else:
+        for (task_name, task_range) in zip(task_names, task_frame_ranges):
+            if task_name == target_task_name:
+                target_task_indxs.append(task_range)
+            if len(target_task_indxs) == num_demonstrations:
+                break
+        if len(target_task_indxs) < num_demonstrations:
+            print(f"Warning: Requested {num_demonstrations} demonstrations but only found {len(target_task_indxs)}")
+        
+
     return target_task_indxs
 
 

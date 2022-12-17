@@ -1,0 +1,8 @@
+\begin{tabular}{l@{\hskip 12pt}S[table-format = 2.2]S[table-format = 2.2]S[table-format = 2.2]S[table-format = 2.2]}
+\toprule
+           \textbf &                       \textbf &                      \textbf &                      \textbf \\
+\midrule
+turn_off_lightbulb &                      0.213606 &                     0.703825 & \bfseries 0.6896551724137931 \\
+ turn_on_lightbulb & \bfseries 0.22259436893939394 & \bfseries 0.7975435374527032 &                     0.515152 \\
+\bottomrule
+\end{tabular}
